@@ -73,6 +73,17 @@ describe("tool.write", () => {
       ),
     )
 
+    it.live("returns diff in metadata for new files", () =>
+      provideTmpdirInstance((dir) =>
+        Effect.gen(function* () {
+          const filepath = path.join(dir, "created.txt")
+          const result = yield* run({ filePath: filepath, content: "created content\n" })
+
+          expect(result.metadata.diff).toContain("+created content")
+        }),
+      ),
+    )
+
     it.live("creates parent directories if needed", () =>
       provideTmpdirInstance((dir) =>
         Effect.gen(function* () {
@@ -123,6 +134,8 @@ describe("tool.write", () => {
 
           expect(result.metadata).toHaveProperty("filepath", filepath)
           expect(result.metadata).toHaveProperty("exists", true)
+          expect(result.metadata.diff).toContain("-old")
+          expect(result.metadata.diff).toContain("+new")
         }),
       ),
     )
