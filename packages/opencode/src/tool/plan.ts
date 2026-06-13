@@ -55,7 +55,7 @@ export const PlanExitTool = Tool.define(
             return {
               title: "User provided feedback",
               output: `User chose not to switch yet and provided feedback: ${answer}`,
-              metadata: { switched: false, feedback: answer },
+              metadata: { switched: false, feedback: answer, plan },
             }
           }
 
@@ -82,7 +82,7 @@ export const PlanExitTool = Tool.define(
           return {
             title: "Switching to build agent",
             output: "User approved switching to build agent. Wait for further instructions.",
-            metadata: { switched: true, feedback: "" },
+            metadata: { switched: true, feedback: "", plan },
           }
         }).pipe(Effect.orDie),
     }
