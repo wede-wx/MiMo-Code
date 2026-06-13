@@ -350,6 +350,39 @@ describe("Actor.spawn fiber lifecycle", () => {
       { git: true, config: providerCfg },
     ),
   )
+
+  it.live("outcome resolves with failure when assistant message contains api error", () =>
+    provideTmpdirServer(
+      Effect.fnUntraced(function* ({ llm }) {
+        const actor = yield* Actor.Service
+        const session = yield* Session.Service
+        const reg = yield* ActorRegistry.Service
+        const parent = yield* session.create({
+          title: "api error",
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        })
+        yield* llm.error(403, { error: { message: "Illegal access" } })
+        const result = yield* actor.spawn({
+          mode: "subagent",
+          sessionID: parent.id,
+          agentType: "build",
+          task: "minimal task",
+          context: "none",
+          tools: ["read"],
+          background: false,
+          model: ref,
+        })
+        const outcome = yield* Deferred.await(result.outcome)
+        expect(outcome.status).toBe("failure")
+        if (outcome.status === "failure") expect(outcome.error).toContain("Illegal access")
+
+        const row = yield* reg.get(parent.id, result.actorID)
+        expect(row?.lastOutcome).toBe("failure")
+        expect(row?.lastError).toContain("Illegal access")
+      }),
+      { git: true, config: providerCfg },
+    ),
+  )
 })
 
 describe("Actor.cancel", () => {
