@@ -221,7 +221,7 @@ export const layer: Layer.Layer<
 
         if (!gitBinary) {
           return {
-            id: id ?? ProjectID.global,
+            id: id ?? resolveProjectId(sandbox),
             worktree: sandbox,
             sandbox,
             vcs: fakeVcs,
@@ -231,7 +231,7 @@ export const layer: Layer.Layer<
         const commonDir = yield* git(["rev-parse", "--git-common-dir"], { cwd: sandbox })
         if (commonDir.code !== 0) {
           return {
-            id: id ?? ProjectID.global,
+            id: id ?? resolveProjectId(sandbox),
             worktree: sandbox,
             sandbox,
             vcs: fakeVcs,

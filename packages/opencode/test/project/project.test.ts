@@ -68,6 +68,21 @@ function projectLayerWithFailure(failArg: string) {
   )
 }
 
+async function withGitUnavailable<A>(fn: () => Promise<A>) {
+  const originalPath = process.env.PATH
+  const originalPathCase = process.env.Path
+  process.env.PATH = ""
+  process.env.Path = ""
+  return Promise.resolve()
+    .then(fn)
+    .finally(() => {
+      if (originalPath === undefined) delete process.env.PATH
+      else process.env.PATH = originalPath
+      if (originalPathCase === undefined) delete process.env.Path
+      else process.env.Path = originalPathCase
+    })
+}
+
 describe("Project.fromDirectory", () => {
   test("should handle git repository with no commits", async () => {
     await using tmp = await tmpdir()
@@ -122,6 +137,20 @@ describe("Project.fromDirectory", () => {
 })
 
 describe("Project.fromDirectory git failure paths", () => {
+  test("assigns distinct project IDs when git binary is unavailable", async () => {
+    await using first = await tmpdir()
+    await using second = await tmpdir()
+    await $`git init`.cwd(first.path).quiet()
+    await $`git init`.cwd(second.path).quiet()
+
+    const { project: firstProject } = await withGitUnavailable(() => run((svc) => svc.fromDirectory(first.path)))
+    const { project: secondProject } = await withGitUnavailable(() => run((svc) => svc.fromDirectory(second.path)))
+
+    expect(firstProject.id).not.toBe(ProjectID.global)
+    expect(secondProject.id).not.toBe(ProjectID.global)
+    expect(secondProject.id).not.toBe(firstProject.id)
+  })
+
   test("keeps vcs and assigns UUID when no commits exist", async () => {
     await using tmp = await tmpdir()
     await $`git init`.cwd(tmp.path).quiet()
@@ -144,12 +173,19 @@ describe("Project.fromDirectory git failure paths", () => {
   })
 
   test("handles git-common-dir failure gracefully", async () => {
-    await using tmp = await tmpdir({ git: true })
+    await using first = await tmpdir({ git: true })
+    await using second = await tmpdir({ git: true })
     const layer = projectLayerWithFailure("--git-common-dir")
 
-    const { project, sandbox } = await run((svc) => svc.fromDirectory(tmp.path), layer)
-    expect(project.worktree).toBe(tmp.path)
-    expect(sandbox).toBe(tmp.path)
+    const { project: firstProject, sandbox: firstSandbox } = await run((svc) => svc.fromDirectory(first.path), layer)
+    const { project: secondProject, sandbox: secondSandbox } = await run((svc) => svc.fromDirectory(second.path), layer)
+    expect(firstProject.id).not.toBe(ProjectID.global)
+    expect(secondProject.id).not.toBe(ProjectID.global)
+    expect(secondProject.id).not.toBe(firstProject.id)
+    expect(firstProject.worktree).toBe(first.path)
+    expect(secondProject.worktree).toBe(second.path)
+    expect(firstSandbox).toBe(first.path)
+    expect(secondSandbox).toBe(second.path)
   })
 })
 
