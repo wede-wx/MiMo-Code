@@ -133,6 +133,51 @@ function tmpConfig(providerID: string, baseURL: string) {
   })
 }
 
+// An agent that carries its own system prompt (like `atlas`), which on the
+// current code path REPLACES the provider base via buildSystemArray.
+function makeCustomPromptAgent(prompt: string): Agent.Info {
+  return {
+    name: "atlas-test",
+    mode: "subagent",
+    options: {},
+    prompt,
+    permission: [{ permission: "*", pattern: "*", action: "allow" }],
+  } satisfies Agent.Info
+}
+
+// Inline-defines a `mimo` provider (id === "mimo") so buildSystemArray's mimo
+// branch is exercised. Model api.id "mimo-auto" maps to PROMPT_DEFAULT (the
+// MiMoCode base) in SystemPrompt.provider.
+function mimoConfig(baseURL: string) {
+  return JSON.stringify({
+    $schema: "https://opencode.ai/config.json",
+    enabled_providers: ["mimo"],
+    provider: {
+      mimo: {
+        name: "MiMo",
+        id: "mimo",
+        env: [],
+        npm: "@ai-sdk/openai-compatible",
+        models: {
+          "mimo-auto": {
+            id: "mimo-auto",
+            name: "MiMo Auto",
+            attachment: false,
+            reasoning: false,
+            temperature: false,
+            tool_call: true,
+            release_date: "2025-01-01",
+            limit: { context: 100000, output: 10000 },
+            cost: { input: 0, output: 0 },
+            options: {},
+          },
+        },
+        options: { apiKey: "test-key", baseURL },
+      },
+    },
+  })
+}
+
 describe("session.llm system prompt — memory-instructions guard", () => {
   test("main agent (no agentID) — '# Memory system' IS appended", async () => {
     const server = queueState.server!
@@ -473,6 +518,75 @@ describe("session.llm system prompt — memory-instructions guard", () => {
         expect(allSys).toContain(path.join(Global.Path.data, "memory", "global", "MEMORY.md"))
         expect(allSys).not.toContain("<data>/memory/projects")
         expect(allSys).not.toContain("<data>/memory/sessions")
+      },
+    })
+  })
+})
+
+describe("session.llm system prompt — mimo free tier keeps base prompt (403 illegal_access fix)", () => {
+  // The mimo free-tier gateway returns 403 illegal_access for requests whose
+  // system prompt is not the MiMoCode base. atlas (and explore/dream/distill)
+  // set agent.prompt, which REPLACES the base in buildSystemArray. Under the
+  // mimo provider the base must be prepended, not replaced.
+  test("custom-prompt agent under mimo provider — base prompt is prepended, not replaced", async () => {
+    const server = queueState.server!
+    const providerID = "mimo"
+    const modelID = "mimo-auto"
+    const customPromptMarker = "ATLAS_CUSTOM_AUDITOR_PROMPT_MARKER"
+    const request = waitRequest(
+      "/chat/completions",
+      new Response(createChatStream("Hi"), { status: 200, headers: { "Content-Type": "text/event-stream" } }),
+    )
+
+    await using tmp = await tmpdir({
+      init: async (dir) => {
+        await Bun.write(path.join(dir, "mimocode.json"), mimoConfig(`${server.url.origin}/v1`))
+      },
+    })
+
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const resolved = await getModel(ProviderID.make(providerID), ModelID.make(modelID))
+        const sessionRt = ManagedRuntime.make(SessionNs.defaultLayer)
+        let sessionID: SessionID
+        try {
+          const info = await sessionRt.runPromise(SessionNs.Service.use((svc) => svc.create({})))
+          sessionID = info.id
+        } finally {
+          await sessionRt.dispose()
+        }
+        const rt = ManagedRuntime.make(Layer.mergeAll(LLM.defaultLayer))
+        try {
+          await rt.runPromise(
+            LLM.Service.use((svc) =>
+              svc
+                .stream({
+                  user: makeBaseUser(sessionID, providerID, resolved.id),
+                  sessionID,
+                  model: resolved,
+                  agent: makeCustomPromptAgent(customPromptMarker),
+                  system: [],
+                  messages: [{ role: "user", content: "Hello" }],
+                  tools: {},
+                })
+                .pipe(Stream.runDrain),
+            ),
+          )
+        } finally {
+          await rt.dispose()
+        }
+        const capture = await request
+        const allSys = (capture.body.messages as Array<{ role: string; content: string }>)
+          .filter((m) => m.role === "system")
+          .map((m) => m.content)
+          .join("\n")
+        // The custom auditor prompt is still present...
+        expect(allSys).toContain(customPromptMarker)
+        // ...AND the MiMoCode base must be present (RED before fix: agent.prompt
+        // replaced the base, so this is missing; GREEN after fix: mimo branch
+        // prepends SystemPrompt.provider, which is PROMPT_DEFAULT for mimo-auto).
+        expect(allSys).toContain("You are MiMoCode")
       },
     })
   })

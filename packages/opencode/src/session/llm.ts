@@ -242,8 +242,16 @@ const live: Layer.Layer<
       const system: string[] = []
       system.push(
         [
-          // use agent prompt otherwise provider prompt
-          ...(input.agent.prompt ? [input.agent.prompt] : SystemPrompt.provider(input.model)),
+          // use agent prompt otherwise provider prompt — but on the mimo free
+          // tier the upstream gateway returns 403 "illegal_access" for any
+          // request whose system prompt is not the MiMoCode base, so there we
+          // always keep the base and append the agent's custom prompt instead
+          // of replacing it (otherwise atlas/explore/dream/distill 403).
+          ...(input.model.providerID === "mimo"
+            ? [...SystemPrompt.provider(input.model), ...(input.agent.prompt ? [input.agent.prompt] : [])]
+            : input.agent.prompt
+              ? [input.agent.prompt]
+              : SystemPrompt.provider(input.model)),
           // any custom prompt passed into this call
           ...input.system,
           // any custom prompt from last user message
