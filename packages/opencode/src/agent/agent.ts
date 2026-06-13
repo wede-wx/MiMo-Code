@@ -12,6 +12,7 @@ import PROMPT_GENERATE from "./generate.txt"
 import PROMPT_EXPLORE from "./prompt/explore.txt"
 import PROMPT_DREAM from "./prompt/dream.txt"
 import PROMPT_DISTILL from "./prompt/distill.txt"
+import PROMPT_ATLAS from "./prompt/atlas.txt"
 import PROMPT_SUMMARY from "./prompt/summary.txt"
 import PROMPT_COMPACTION from "./prompt/compaction.txt"
 import PROMPT_TITLE from "./prompt/title.txt"
@@ -365,6 +366,27 @@ export const layer = Layer.effect(
               user,
             ),
             toolAllowlist: ["read", "write", "edit", "glob", "grep", "memory", "bash"],
+          },
+          atlas: {
+            name: "atlas",
+            mode: "subagent" as const,
+            options: {},
+            native: true,
+            hidden: true,
+            prompt: PROMPT_ATLAS,
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                "*": "deny",
+                read: "allow",
+                glob: "allow",
+                grep: "allow",
+                history: "allow",
+                bash: "allow",
+              }),
+              user,
+            ),
+            toolAllowlist: ["read", "glob", "grep", "history", "bash"],
           },
         }
 

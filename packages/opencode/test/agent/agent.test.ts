@@ -4,6 +4,7 @@ import path from "path"
 import { provideInstance, tmpdir, provideTmpdirInstance } from "../fixture/fixture"
 import { Instance } from "../../src/project/instance"
 import { Agent } from "../../src/agent/agent"
+import { SYSTEM_SPAWNED_AGENT_TYPES } from "../../src/agent/config"
 import { Permission } from "../../src/permission"
 import { ToolRegistry } from "../../src/tool"
 import { ModelID, ProviderID } from "../../src/provider/schema"
@@ -733,7 +734,7 @@ test("defaultAgent throws when all primary agents are disabled", async () => {
   })
 })
 
-test("bounded computation agents are exactly title, summary, compaction, checkpoint-writer, dream, distill", async () => {
+test("bounded computation agents are exactly title, summary, compaction, checkpoint-writer, dream, distill, atlas", async () => {
   await using tmp = await tmpdir()
   await Instance.provide({
     directory: tmp.path,
@@ -743,7 +744,7 @@ test("bounded computation agents are exactly title, summary, compaction, checkpo
         .filter((a) => a.native === true && a.hidden === true)
         .map((a) => a.name)
         .sort()
-      expect(boundedComputations).toEqual(["checkpoint-writer", "compaction", "distill", "dream", "summary", "title"])
+      expect(boundedComputations).toEqual(["atlas", "checkpoint-writer", "compaction", "distill", "dream", "summary", "title"])
 
       // Spot-check a few durable agents are NOT classified as bounded.
       const build = agents.find((a) => a.name === "build")
@@ -753,6 +754,33 @@ test("bounded computation agents are exactly title, summary, compaction, checkpo
       const plan = agents.find((a) => a.name === "plan")
       expect(plan?.native).toBe(true)
       expect(plan?.hidden).toBeFalsy()
+    },
+  })
+})
+
+test("atlas auditor agent is a hidden read-only subagent", async () => {
+  await using tmp = await tmpdir()
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const atlas = await load(tmp.path, (svc) => svc.get("atlas"))
+      expect(atlas).toBeDefined()
+      expect(atlas?.mode).toBe("subagent")
+      expect(atlas?.native).toBe(true)
+      expect(atlas?.hidden).toBe(true)
+      expect(atlas?.toolAllowlist).toEqual(["read", "glob", "grep", "history", "bash"])
+      expect(atlas?.toolAllowlist).not.toContain("write")
+      expect(atlas?.toolAllowlist).not.toContain("edit")
+      expect(atlas?.toolAllowlist).not.toContain("memory")
+      expect(Permission.evaluate("read", "any/path", atlas!.permission).action).toBe("allow")
+      expect(Permission.evaluate("glob", "any/path", atlas!.permission).action).toBe("allow")
+      expect(Permission.evaluate("grep", "any/path", atlas!.permission).action).toBe("allow")
+      expect(Permission.evaluate("history", "any/path", atlas!.permission).action).toBe("allow")
+      expect(Permission.evaluate("bash", "sqlite3 --readonly mimocode.db", atlas!.permission).action).toBe("allow")
+      expect(Permission.evaluate("write", "any/path", atlas!.permission).action).toBe("deny")
+      expect(Permission.evaluate("edit", "any/path", atlas!.permission).action).toBe("deny")
+      expect(Permission.evaluate("memory", "any/path", atlas!.permission).action).toBe("deny")
+      expect(SYSTEM_SPAWNED_AGENT_TYPES.has("atlas")).toBe(true)
     },
   })
 })

@@ -63,6 +63,7 @@ export const Default = {
   REVIEW: "review",
   DREAM: "dream",
   DISTILL: "distill",
+  ATLAS: "atlas",
   GOAL: "goal",
   DEEP_RESEARCH: "deep-research",
 } as const
@@ -164,6 +165,17 @@ export const layer = Layer.effect(
           ].join("\n")
         },
         hints: ["$ARGUMENTS"],
+      }
+      commands[Default.ATLAS] = {
+        name: Default.ATLAS,
+        description: "audit the current session trajectory with a clean read-only subagent",
+        agent: "atlas",
+        source: "command",
+        subtask: true,
+        get template() {
+          return "Audit session $SESSION_ID. Read the trajectory database (read-only) and report what was actually done versus what was claimed."
+        },
+        hints: ["$SESSION_ID"],
       }
       commands[Default.GOAL] = {
         name: Default.GOAL,
