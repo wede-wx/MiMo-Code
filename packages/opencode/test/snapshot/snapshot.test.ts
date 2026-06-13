@@ -1,4 +1,4 @@
-import { afterEach, test, expect } from "bun:test"
+import { afterEach, test, expect, spyOn } from "bun:test"
 import { $ } from "bun"
 import fs from "fs/promises"
 import path from "path"
@@ -6,6 +6,7 @@ import { Effect } from "effect"
 import { Snapshot } from "../../src/snapshot"
 import { Instance } from "../../src/project/instance"
 import { Filesystem } from "../../src/util"
+import { Log } from "../../src/util"
 import { provideInstance, tmpdir } from "../fixture/fixture"
 
 // Git always outputs /-separated paths internally. Snapshot.patch() joins them
@@ -1528,4 +1529,38 @@ test("revert handles large mixed batches across chunk boundaries", async () => {
       )
     },
   })
+})
+
+test("tracks changes from a nested dev directory without doubling worktree-relative paths", async () => {
+  await using tmp = await tmpdir({
+    git: true,
+    init: async (dir) => {
+      await fs.mkdir(path.join(dir, "packages", "opencode", "src"), { recursive: true })
+      await Filesystem.write(path.join(dir, "packages", "opencode", "src", "index.ts"), "console.log('before')\n")
+      await $`git add .`.cwd(dir).quiet()
+      await $`git commit -m nested-dev-layout`.cwd(dir).quiet()
+    },
+  })
+
+  const directory = path.join(tmp.path, "packages", "opencode")
+  const logger = Log.create({ service: "snapshot" })
+  const warn = spyOn(logger, "warn")
+
+  try {
+    const before = await run(directory, (snapshot) => snapshot.track())
+    expect(before).toBeTruthy()
+
+    await Filesystem.write(path.join(directory, "src", "index.ts"), "console.log('after')\n")
+
+    const patch = await run(directory, (snapshot) => snapshot.patch(before!))
+    expect(
+      warn.mock.calls.some(
+        ([message, extra]) =>
+          message === "failed to add snapshot files" && extra && "exitCode" in extra && extra.exitCode === 128,
+      ),
+    ).toBe(false)
+    expect(patch.files).toContain(fwd(tmp.path, "packages", "opencode", "src", "index.ts"))
+  } finally {
+    warn.mockRestore()
+  }
 })
