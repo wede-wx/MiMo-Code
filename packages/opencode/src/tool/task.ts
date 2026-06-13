@@ -170,8 +170,11 @@ export function recoverTaskArgs(rawArgs: unknown): TaskOperation | undefined {
   if (typeof obj.operation === "string") {
     try {
       const inner = JSON.parse(obj.operation)
-      if (inner && typeof inner === "object" && !Array.isArray(inner)) obj = { operation: inner }
-    } catch {}
+      if (!inner || typeof inner !== "object" || Array.isArray(inner)) return undefined
+      obj = { operation: inner }
+    } catch {
+      return undefined
+    }
   }
   if (obj.operation && typeof obj.operation === "object" && !Array.isArray(obj.operation))
     return { operation: obj.operation } as TaskOperation

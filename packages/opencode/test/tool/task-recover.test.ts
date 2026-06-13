@@ -18,6 +18,10 @@ describe("recoverTaskArgs", () => {
     expect(recoverTaskArgs({ operation: '{"action":"list"}' })).toEqual({ operation: { action: "list" } })
   })
 
+  test("malformed string operation does not fall back to bare summary", () => {
+    expect(recoverTaskArgs({ operation: "{not-json", summary: "x" })).toBeUndefined()
+  })
+
   test("already-nested operation → passthrough", () => {
     const op = { operation: { action: "get", id: "T1" } } as const
     expect(recoverTaskArgs(op)).toEqual(op)

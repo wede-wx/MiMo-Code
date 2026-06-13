@@ -31,6 +31,10 @@ describe("recoverActorArgs", () => {
     })
   })
 
+  test("malformed string operation does not fall back to bare actor fields", () => {
+    expect(recoverActorArgs({ operation: "{bad-json", subagent_type: "explore", description: "d", prompt: "p" })).toBeUndefined()
+  })
+
   test("already-nested operation → passthrough", () => {
     const op = { operation: { action: "run", subagent_type: "explore", description: "d", prompt: "p" } } as const
     expect(recoverActorArgs(op)).toEqual(op)
