@@ -586,6 +586,79 @@ describe("session.agent-resolution", () => {
         ),
     })
   }, 30000)
+
+  test("command templates can interpolate the current session id", async () => {
+    const server = Bun.serve({
+      port: 0,
+      async fetch(req) {
+        const url = new URL(req.url)
+        if (!url.pathname.endsWith("/chat/completions")) {
+          return new Response("not found", { status: 404 })
+        }
+        return new Response(chat("OK"), {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        })
+      },
+    })
+
+    try {
+      await using tmp = await tmpdir({
+        git: true,
+        init: async (dir) => {
+          await Bun.write(
+            path.join(dir, "mimocode.json"),
+            JSON.stringify({
+              $schema: "https://opencode.ai/config.json",
+              enabled_providers: ["alibaba"],
+              provider: {
+                alibaba: {
+                  options: {
+                    apiKey: "test-key",
+                    baseURL: `${server.url.origin}/v1`,
+                  },
+                },
+              },
+              agent: {
+                build: { model: "alibaba/qwen-plus" },
+              },
+              command: {
+                session_echo: {
+                  template: "Audit session $SESSION_ID\n\n$ARGUMENTS",
+                },
+              },
+            }),
+          )
+        },
+      })
+
+      await Instance.provide({
+        directory: tmp.path,
+        fn: () =>
+          run(
+            Effect.gen(function* () {
+              const prompt = yield* SessionPrompt.Service
+              const sessions = yield* Session.Service
+              const session = yield* sessions.create({})
+
+              yield* prompt.command({
+                sessionID: session.id,
+                command: "session_echo",
+                arguments: "check this",
+              })
+
+              const messages = yield* sessions.messages({ sessionID: session.id })
+              const text = messages.flatMap((message) => message.parts).find((part) => part.type === "text")?.text
+
+              expect(text).toContain(`Audit session ${session.id}`)
+              expect(text).not.toContain("$SESSION_ID")
+            }),
+          ),
+      })
+    } finally {
+      void server.stop(true)
+    }
+  }, 30000)
 })
 
 // F37: subagent context isolation. Mimocode's spawnSubagent shares

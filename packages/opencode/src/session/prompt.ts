@@ -3030,7 +3030,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           return args[argIndex]
         })
         const usesArgumentsPlaceholder = templateCommand.includes("$ARGUMENTS")
-        template = withArgs.replaceAll("$ARGUMENTS", input.arguments)
+        template = withArgs.replaceAll("$ARGUMENTS", input.arguments).replaceAll("$SESSION_ID", input.sessionID)
 
         if (placeholders.length === 0 && !usesArgumentsPlaceholder && input.arguments.trim()) {
           template = template + "\n\n" + input.arguments
