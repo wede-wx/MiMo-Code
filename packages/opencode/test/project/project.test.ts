@@ -103,10 +103,14 @@ describe("Project.fromDirectory", () => {
     expect(await Bun.file(idFile).exists()).toBe(true)
   })
 
-  test("returns global for non-git directory", async () => {
-    await using tmp = await tmpdir()
-    const { project } = await run((svc) => svc.fromDirectory(tmp.path))
-    expect(project.id).toBe(ProjectID.global)
+  test("assigns distinct project IDs to distinct non-git directories", async () => {
+    await using first = await tmpdir()
+    await using second = await tmpdir()
+    const { project: firstProject } = await run((svc) => svc.fromDirectory(first.path))
+    const { project: secondProject } = await run((svc) => svc.fromDirectory(second.path))
+    expect(firstProject.id).not.toBe(ProjectID.global)
+    expect(secondProject.id).not.toBe(ProjectID.global)
+    expect(secondProject.id).not.toBe(firstProject.id)
   })
 
   test("derives stable project ID from cached UUID", async () => {

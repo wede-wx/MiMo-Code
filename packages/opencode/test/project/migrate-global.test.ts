@@ -6,6 +6,7 @@ import { ProjectTable } from "../../src/project/project.sql"
 import { ProjectID } from "../../src/project/schema"
 import { SessionID } from "../../src/session/schema"
 import { Log } from "../../src/util"
+import { Flag } from "../../src/flag/flag"
 import { $ } from "bun"
 import { tmpdir } from "../fixture/fixture"
 import { Effect } from "effect"
@@ -60,11 +61,21 @@ function ensureGlobal() {
   )
 }
 
+async function withGitDisabled<A>(fn: () => Promise<A>) {
+  const original = Flag.MIMOCODE_DISABLE_GIT
+  Flag.MIMOCODE_DISABLE_GIT = true
+  return Promise.resolve()
+    .then(fn)
+    .finally(() => {
+      Flag.MIMOCODE_DISABLE_GIT = original
+    })
+}
+
 describe("migrateFromGlobal", () => {
   test("migrates global sessions on first project creation", async () => {
-    // 1. Start in a non-git directory — fromDirectory yields the "global" project ID.
+    // 1. Explicitly disable git probing — fromDirectory yields the "global" project ID.
     await using tmp = await tmpdir()
-    const { project: pre } = await run((svc) => svc.fromDirectory(tmp.path))
+    const { project: pre } = await withGitDisabled(() => run((svc) => svc.fromDirectory(tmp.path)))
     expect(pre.id).toBe(ProjectID.global)
 
     // 2. Seed a session under "global" with matching directory
