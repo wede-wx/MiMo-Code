@@ -17,6 +17,7 @@ import { TaskRegistry } from "@/task/registry"
 import { TaskID } from "@/task/schema"
 import { SessionCheckpoint } from "@/session/checkpoint"
 import { inboxServiceRef } from "@/inbox/inbox-ref"
+import { COMMAND_INTERNAL_SUBAGENT_TYPES } from "@/agent/config"
 import { Effect, Deferred } from "effect"
 
 export interface ActorPromptOps {
@@ -300,15 +301,17 @@ export const ActorTool = Tool.define(
     // wired into ToolRegistry's layer.
     return Effect.fn("ActorTool.init")(function* () {
       // F36a: build subagent_type as a dynamic z.enum from the agent registry,
-      // filtered to spawnable agents (mode === "subagent" && !hidden). Excludes
-      // hidden internals (title, summary, checkpoint-writer per F24) and
-      // includes both native registry agents (general/explore) and
-      // user-config-defined subagents. This gives the LLM a discoverable,
+      // filtered to spawnable agents (mode === "subagent" && !hidden) plus
+      // command-internal hidden subagents. Excludes hidden internals (title,
+      // summary, checkpoint-writer per F24) while still allowing command
+      // pipelines like /atlas to invoke their hidden subagent. This gives the LLM a discoverable,
       // validated list of agent types — replaces the prior bare z.string()
       // that the model couldn't introspect (root cause of three harness runs
       // with zero subagent spawns).
       const allAgents = yield* agent.list()
-      const spawnable = allAgents.filter((a) => a.mode === "subagent" && !a.hidden)
+      const spawnable = allAgents.filter(
+        (a) => a.mode === "subagent" && (!a.hidden || COMMAND_INTERNAL_SUBAGENT_TYPES.has(a.name)),
+      )
       const spawnableNames = spawnable.map((a) => a.name)
       if (spawnableNames.length === 0) {
         return yield* Effect.die(new Error("No spawnable subagent types"))

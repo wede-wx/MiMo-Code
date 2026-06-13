@@ -186,6 +186,7 @@ describe("tool.actor", () => {
           const general = first.indexOf("- general:")
           const zebra = first.indexOf("- zebra: Zebra agent")
 
+          expect(first).not.toContain("- atlas:")
           expect(alpha).toBeGreaterThan(-1)
           expect(explore).toBeGreaterThan(alpha)
           expect(general).toBeGreaterThan(explore)
@@ -428,12 +429,13 @@ describe("tool.actor", () => {
 
 describe("Actor tool subagent_type enum (F36)", () => {
   // The actor tool's `subagent_type` schema is built dynamically from the
-  // agent registry, filtered to mode==="subagent" && !hidden. Spawnable
-  // agents (general, explore, user-config-defined) appear in the enum;
-  // hidden internals (title, summary, checkpoint-writer per F24) do not.
+  // agent registry. Spawnable user-facing agents (general, explore,
+  // user-config-defined) appear in the enum. Hidden command-internal
+  // subagents can opt in separately, while hidden internals (title, summary,
+  // checkpoint-writer per F24) do not.
   // We probe via the resolved tool's parameters schema since that's the
   // contract surface the LLM hits — Actor.Service.spawn bypasses zod.
-  it.live("subagent_type enum includes spawnable agents and rejects hidden ones", () =>
+  it.live("subagent_type enum includes spawnable agents and command-internal atlas", () =>
     provideTmpdirInstance(() =>
       Effect.gen(function* () {
         const tool = yield* ActorTool
@@ -455,10 +457,15 @@ describe("Actor tool subagent_type enum (F36)", () => {
         expect(accept("general").success).toBe(true)
         expect(accept("explore").success).toBe(true)
 
-        // title, summary, checkpoint-writer are hidden=true → not in the enum.
+        // atlas is hidden but command-internal → in the enum for /atlas.
+        expect(accept("atlas").success).toBe(true)
+
+        // Other hidden internals are not command-internal actor targets.
         expect(accept("title").success).toBe(false)
         expect(accept("summary").success).toBe(false)
         expect(accept("checkpoint-writer").success).toBe(false)
+        expect(accept("dream").success).toBe(false)
+        expect(accept("distill").success).toBe(false)
 
         // Made-up name → not in the enum.
         expect(accept("does-not-exist").success).toBe(false)
