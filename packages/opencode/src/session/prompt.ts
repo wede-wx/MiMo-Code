@@ -1,5 +1,6 @@
 import path from "path"
 import os from "os"
+import { appendFile } from "fs/promises"
 import z from "zod"
 import { SessionID, MessageID, PartID } from "./schema"
 import { MessageV2 } from "./message-v2"
@@ -92,6 +93,42 @@ export function recallHintLines(toolCfg: ToolStyleConfig | undefined): string[] 
   // memory has no shell form (no shell.parse) → always JSON.
   return [`- memory({ operation: "search", query: "<keyword>" })`, taskHint, actorHint]
 }
+
+function auditLedgerBlock(input: {
+  sessionID: SessionID
+  anchor: PartID
+  output: string
+  now?: Date
+}) {
+  const body = input.output.endsWith("\n") ? input.output : input.output + "\n"
+  return [
+    `## ${(input.now ?? new Date()).toISOString()} · session ${input.sessionID}`,
+    `- anchor: ${input.anchor}`,
+    `- 复审: audit_trajectory(session_id=${input.sessionID})`,
+    "",
+    body,
+    "---",
+    "",
+  ].join("\n")
+}
+
+export const writeAuditLedgerEntry = Effect.fn("SessionPrompt.writeAuditLedgerEntry")(function* (input: {
+  fsys: AppFileSystem.Interface
+  projectRoot: string
+  sessionID: SessionID
+  anchor: PartID
+  output: string
+  command?: string
+  now?: Date
+}) {
+  if (input.command && input.command !== "atlas") return
+  const ledger = path.join(input.projectRoot, ".mimocode", "audit-ledger.md")
+  yield* input.fsys.ensureDir(path.dirname(ledger))
+  yield* Effect.tryPromise({
+    try: () => appendFile(ledger, auditLedgerBlock(input)),
+    catch: (cause) => new Error(`Failed to append audit ledger: ${cause instanceof Error ? cause.message : String(cause)}`),
+  })
+})
 
 /**
  * Cap on goal-driven main-loop re-entries per turn — the safety valve against
@@ -1007,6 +1044,16 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             input: part.state.input,
           },
         } satisfies MessageV2.ToolPart)
+      }
+
+      if (result && task.command === "atlas") {
+        yield* writeAuditLedgerEntry({
+          fsys,
+          projectRoot: ctx.worktree,
+          sessionID,
+          anchor: part.id,
+          output: result.output,
+        }).pipe(Effect.orDie)
       }
 
       if (!task.command) return
