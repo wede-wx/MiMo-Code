@@ -1,0 +1,12 @@
+Read the raw, ordered action trajectory for one session from the local SQLite ledger.
+
+Use this tool for Atlas-style auditing. It is read-only and returns the exact parts needed to verify claims:
+text, reasoning, tool input, tool output, tool error, exit code, diff, and tool metadata.
+
+Arguments:
+- session_id: required session id to audit.
+- agent_id: optional message agent_id slice. Omit it to read the whole session.
+- offset: optional part offset, default 0.
+- limit: optional max parts per call, default 50, max 200.
+
+Large sessions are paginated. If hasMore is true, call again with nextOffset.

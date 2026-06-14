@@ -6,6 +6,7 @@ import { EditTool } from "./edit"
 import { GlobTool } from "./glob"
 import { GrepTool } from "./grep"
 import { HistoryTool } from "./history"
+import { AuditTrajectoryTool } from "./audit_trajectory"
 import { MemoryTool } from "./memory"
 import { ReadTool } from "./read"
 import { ActorTool } from "./actor"
@@ -136,6 +137,7 @@ export const layer = Layer.effect(
     const changedirtool = yield* ChangeDirectoryTool
     const skilltool = yield* SkillTool
     const historytool = yield* HistoryTool
+    const audittrajectorytool = yield* AuditTrajectoryTool
     const memorytool = yield* MemoryTool
     const tasktool = yield* TaskTool
     const workflowtool = yield* WorkflowTool
@@ -222,6 +224,7 @@ export const layer = Layer.effect(
           plan: Tool.init(plan),
           memory: Tool.init(memorytool),
           history: Tool.init(historytool),
+          audit_trajectory: Tool.init(audittrajectorytool),
           task: Tool.init(tasktool),
           workflow: Tool.init(workflowtool),
         })
@@ -248,6 +251,7 @@ export const layer = Layer.effect(
             tool.plan,
             tool.memory,
             tool.history,
+            tool.audit_trajectory,
             tool.task,
             ...(Flag.MIMOCODE_EXPERIMENTAL_WORKFLOW_TOOL ? [tool.workflow] : []),
           ],

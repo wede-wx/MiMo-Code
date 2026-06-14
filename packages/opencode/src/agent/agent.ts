@@ -384,11 +384,12 @@ export const layer = Layer.effect(
                 glob: "allow",
                 grep: "allow",
                 history: "allow",
+                audit_trajectory: "allow",
                 bash: "allow",
               }),
               user,
             ),
-            toolAllowlist: ["read", "glob", "grep", "history", "bash"],
+            toolAllowlist: ["read", "glob", "grep", "history", "audit_trajectory", "bash"],
           },
         }
 
