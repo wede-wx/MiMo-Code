@@ -126,10 +126,14 @@ export function renderCommandTemplate(input: {
 }
 
 /** @internal Exported for unit testing command-subtask continuation wording. */
-export function subtaskContinuationPrompt(command: string | undefined) {
-  if (command === "atlas") {
-    return "The audit has been recorded. Continue with your task. Do not restate or summarize the audit verdict."
+export function subtaskContinuationPrompt(
+  command: string | undefined,
+  verdict: "done" | "not_done" | "unreadable" = "unreadable",
+) {
+  if (command === "atlas" && verdict === "not_done") {
+    return "The audit returned OVERALL_VERDICT: NOT_DONE. Rework the task using the audit result above as the source of truth. Continue with your task. Do not restate or summarize the audit verdict."
   }
+  if (command === "atlas") return "The audit has been recorded. Continue with your task. Do not restate or summarize the audit verdict."
   return "Summarize the actor tool output above and continue with your task."
 }
 
@@ -1123,7 +1127,10 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         messageID: summaryUserMsg.id,
         sessionID,
         type: "text",
-        text: subtaskContinuationPrompt(task.command),
+        text: subtaskContinuationPrompt(
+          task.command,
+          task.command === "atlas" && result ? parseOverallVerdict(result.output) : undefined,
+        ),
         synthetic: true,
       } satisfies MessageV2.TextPart)
     })
