@@ -125,6 +125,14 @@ export function renderCommandTemplate(input: {
   return template
 }
 
+/** @internal Exported for unit testing command-subtask continuation wording. */
+export function subtaskContinuationPrompt(command: string | undefined) {
+  if (command === "atlas") {
+    return "The audit has been recorded. Continue with your task. Do not restate or summarize the audit verdict."
+  }
+  return "Summarize the actor tool output above and continue with your task."
+}
+
 function auditLedgerBlock(input: {
   sessionID: SessionID
   anchor: PartID
@@ -1104,7 +1112,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         messageID: summaryUserMsg.id,
         sessionID,
         type: "text",
-        text: "Summarize the actor tool output above and continue with your task.",
+        text: subtaskContinuationPrompt(task.command),
         synthetic: true,
       } satisfies MessageV2.TextPart)
     })
