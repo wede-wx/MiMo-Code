@@ -125,20 +125,110 @@ export function renderCommandTemplate(input: {
   return template
 }
 
+type OverallVerdict = "done" | "not_done" | "unreadable"
+type AtlasContinuationDecision =
+  | { kind: "legacy"; text: string; reworkAttempt?: undefined }
+  | { kind: "done"; text: string; reworkAttempt?: undefined }
+  | { kind: "rework"; text: string; reworkAttempt: number }
+  | { kind: "give_up"; text: string; reworkAttempt?: undefined }
+  | { kind: "unreadable"; text: string; reworkAttempt?: undefined }
+
+const ATLAS_AUDIT_ATTEMPT_PATTERN = /\[atlas-audit-attempt:(\d+)\]/
+const ATLAS_AUDIT_ATTEMPT_TOKEN_PATTERN = /\s*\[atlas-audit-attempt:\d+\]/g
+const ATLAS_REWORK_ATTEMPT_METADATA_KEY = "atlas_rework_attempt"
+const MAX_ATLAS_REWORK_ATTEMPT = 3
+
+/** @internal Exported for unit testing atlas audit attempt markers. */
+export function encodeAtlasAuditAttemptDescription(description: string, attempt: number) {
+  const clean = description.replace(ATLAS_AUDIT_ATTEMPT_TOKEN_PATTERN, "").trim()
+  if (attempt <= 0) return clean
+  return `${clean}${clean ? " " : ""}[atlas-audit-attempt:${attempt}]`
+}
+
+/** @internal Exported for unit testing atlas audit attempt markers. */
+export function atlasAuditAttemptFromDescription(description: string) {
+  const match = description.match(ATLAS_AUDIT_ATTEMPT_PATTERN)
+  if (!match) return 0
+  const attempt = Number(match[1])
+  if (!Number.isInteger(attempt) || attempt < 0) return 0
+  return attempt
+}
+
+/** @internal Exported for unit testing atlas re-audit idempotence. */
+export function shouldTriggerAtlasReaudit(input: {
+  reworkAttempt: number | undefined
+  mainAnswered: boolean
+  existingAuditAttempts: number[]
+}) {
+  if (input.reworkAttempt === undefined) return undefined
+  if (!input.mainAnswered) return undefined
+  if (input.existingAuditAttempts.includes(input.reworkAttempt)) return undefined
+  return input.reworkAttempt
+}
+
+function atlasReworkAttemptFromMessage(msg: MessageV2.WithParts | undefined) {
+  const value = msg?.parts
+    .filter((part): part is MessageV2.TextPart => part.type === "text")
+    .map((part) => part.metadata?.[ATLAS_REWORK_ATTEMPT_METADATA_KEY])
+    .find((item) => typeof item === "number" && Number.isInteger(item) && item > 0)
+  if (typeof value !== "number") return undefined
+  if (value > MAX_ATLAS_REWORK_ATTEMPT) return undefined
+  return value
+}
+
+function atlasAuditAttemptsAfterMessage(msgs: MessageV2.WithParts[], messageID: MessageID) {
+  const index = msgs.findIndex((msg) => msg.info.id === messageID)
+  if (index === -1) return []
+  return msgs
+    .slice(index + 1)
+    .flatMap((msg) =>
+      msg.parts
+        .filter((part): part is MessageV2.SubtaskPart => part.type === "subtask" && part.command === "atlas")
+        .map((part) => atlasAuditAttemptFromDescription(part.description)),
+    )
+}
+
+/** @internal Exported for unit testing command-subtask continuation decisions. */
+export function subtaskContinuationDecision(
+  command: string | undefined,
+  verdict: OverallVerdict = "unreadable",
+  auditAttempt = 0,
+): AtlasContinuationDecision {
+  if (command !== "atlas")
+    return { kind: "legacy", text: "Summarize the actor tool output above and continue with your task." }
+  if (verdict === "unreadable")
+    return {
+      kind: "unreadable",
+      text: "The audit verdict could not be read in machine-readable form. The audit has been recorded and handed to the user for manual review. Do not treat the audit as passed, do not trigger another audit, and do not restate or summarize the audit verdict.",
+    }
+  if (verdict === "not_done" && auditAttempt >= MAX_ATLAS_REWORK_ATTEMPT)
+    return {
+      kind: "give_up",
+      text: "The audit returned OVERALL_VERDICT: NOT_DONE after 3 rework attempts. Stop the rework loop and hand this to the user for manual review. Do not restate or summarize the audit verdict.",
+    }
+  if (verdict === "not_done")
+    return {
+      kind: "rework",
+      reworkAttempt: auditAttempt + 1,
+      text: "The audit returned OVERALL_VERDICT: NOT_DONE. Rework the task using the audit result above as the source of truth. Continue with your task. Do not restate or summarize the audit verdict.",
+    }
+  return {
+    kind: "done",
+    text: "The audit has been recorded. Continue with your task. Do not restate or summarize the audit verdict.",
+  }
+}
+
 /** @internal Exported for unit testing command-subtask continuation wording. */
 export function subtaskContinuationPrompt(
   command: string | undefined,
-  verdict: "done" | "not_done" | "unreadable" = "unreadable",
+  verdict: OverallVerdict = "unreadable",
+  auditAttempt = 0,
 ) {
-  if (command === "atlas" && verdict === "not_done") {
-    return "The audit returned OVERALL_VERDICT: NOT_DONE. Rework the task using the audit result above as the source of truth. Continue with your task. Do not restate or summarize the audit verdict."
-  }
-  if (command === "atlas") return "The audit has been recorded. Continue with your task. Do not restate or summarize the audit verdict."
-  return "Summarize the actor tool output above and continue with your task."
+  return subtaskContinuationDecision(command, verdict, auditAttempt).text
 }
 
 /** @internal Exported for unit testing atlas report parsing. */
-export function parseOverallVerdict(output: string): "done" | "not_done" | "unreadable" {
+export function parseOverallVerdict(output: string): OverallVerdict {
   const line = output
     .split(/\r?\n/)
     .filter((item) => /^[ \t]*OVERALL_VERDICT:/i.test(item))
@@ -1112,6 +1202,11 @@ NOTE: At any point in time through this workflow you should feel free to ask the
 
       if (!task.command) return
 
+      const continuationDecision = subtaskContinuationDecision(
+        task.command,
+        task.command === "atlas" && result ? parseOverallVerdict(result.output) : undefined,
+        task.command === "atlas" ? atlasAuditAttemptFromDescription(task.description) : 0,
+      )
       const summaryUserMsg: MessageV2.User = {
         id: MessageID.ascending(),
         sessionID,
@@ -1127,12 +1222,77 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         messageID: summaryUserMsg.id,
         sessionID,
         type: "text",
-        text: subtaskContinuationPrompt(
-          task.command,
-          task.command === "atlas" && result ? parseOverallVerdict(result.output) : undefined,
-        ),
+        text: continuationDecision.text,
         synthetic: true,
+        metadata:
+          continuationDecision.kind === "rework"
+            ? { [ATLAS_REWORK_ATTEMPT_METADATA_KEY]: continuationDecision.reworkAttempt }
+            : undefined,
       } satisfies MessageV2.TextPart)
+    })
+
+    const scheduleAtlasReaudit = Effect.fn("SessionPrompt.scheduleAtlasReaudit")(function* (input: {
+      sessionID: SessionID
+      lastUser: MessageV2.User
+      lastFinished: MessageV2.Assistant | undefined
+      msgs: MessageV2.WithParts[]
+    }) {
+      if ((input.lastUser.agentID ?? "main") !== "main") return false
+      const lastUserMsg = input.msgs.findLast(
+        (msg) => msg.info.role === "user" && msg.info.id === input.lastUser.id,
+      )
+      const attempt = shouldTriggerAtlasReaudit({
+        reworkAttempt: atlasReworkAttemptFromMessage(lastUserMsg),
+        mainAnswered: !!input.lastFinished && input.lastUser.id < input.lastFinished.id,
+        existingAuditAttempts: atlasAuditAttemptsAfterMessage(input.msgs, input.lastUser.id),
+      })
+      if (attempt === undefined) return false
+
+      const cmd = yield* commands.get(Command.Default.ATLAS)
+      if (!cmd) return false
+      const templateCommand = yield* Effect.promise(async () => cmd.template)
+      const template = renderCommandTemplate({
+        templateCommand,
+        arguments: "",
+        sessionID: input.sessionID,
+        auditSince: templateCommand.includes("$AUDIT_SINCE")
+          ? String((yield* actorRegistry.lastAuditTime(input.sessionID)) ?? "none")
+          : undefined,
+      }).trim()
+      const templateParts = yield* resolvePromptParts(template)
+      const taskModel = yield* Effect.gen(function* () {
+        if (cmd.model) return Provider.parseModel(cmd.model)
+        if (cmd.agent) {
+          const cmdAgent = yield* agents.get(cmd.agent)
+          if (cmdAgent?.model) return cmdAgent.model
+        }
+        return { providerID: input.lastUser.model.providerID, modelID: input.lastUser.model.modelID }
+      })
+      yield* getModel(taskModel.providerID, taskModel.modelID, input.sessionID)
+
+      const userMsg: MessageV2.User = {
+        id: MessageID.ascending(),
+        sessionID: input.sessionID,
+        role: "user",
+        agentID: input.lastUser.agentID,
+        time: { created: Date.now() },
+        agent: input.lastUser.agent,
+        model: input.lastUser.model,
+      }
+      yield* sessions.updateMessage(userMsg)
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        messageID: userMsg.id,
+        sessionID: input.sessionID,
+        type: "subtask",
+        agent: cmd.agent ?? "atlas",
+        description: encodeAtlasAuditAttemptDescription(cmd.description ?? "", attempt),
+        command: Command.Default.ATLAS,
+        model: { providerID: taskModel.providerID, modelID: taskModel.modelID },
+        prompt: (templateParts.find((part): part is typeof part & { type: "text"; text: string } => part.type === "text"))
+          ?.text ?? "",
+      } satisfies MessageV2.SubtaskPart)
+      return true
     })
 
     const shellImpl = Effect.fn("SessionPrompt.shellImpl")(function* (input: ShellInput) {
@@ -2338,6 +2498,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             if (classification.type === "final" && classification.degraded)
               yield* slog.warn("degraded final on abnormal finish", { finish: lastAssistant.finish })
             if (classification.type !== "continue") {
+              if (yield* scheduleAtlasReaudit({ sessionID, lastUser, lastFinished, msgs })) continue
               if (yield* taskGate(lastUser)) continue
               if (yield* goalGate(lastUser)) continue
               yield* slog.info("exiting loop", { classification: classification.type })
