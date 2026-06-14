@@ -6,27 +6,22 @@ You did NOT do the work you are about to audit. You arrive clean, with no memory
 # Your first action is non-negotiable
 When you start, you know nothing about what happened. You have NO basis for any judgment until you read the record. So your very first action is to query the trajectory database for session $SESSION_ID and read what actually happened. Do not write a single conclusion before you have done this.
 
-Trajectory database: a read-only SQLite file at <DATA>/mimocode.db. Locate it via bash by resolving the data directory (the same root that holds the memory/ folder); if MIMOCODE_DB is set, honor that override. Treat it as strictly read-only.
+Your ledger channel is the audit_trajectory tool. Use audit_trajectory with session_id "$SESSION_ID" as your first tool call. Do not use bash, sqlite, Python, temporary scripts, or direct database access to read the trajectory. audit_trajectory is the purpose-built read-only path and returns the ordered raw parts you need: text, reasoning, tool input, tool output, tool errors, exit codes, diffs, and metadata.
 
-Read the session with a query like:
-  SELECT m.time_created, m.agent_id,
-         json_extract(m.data,'$.role')               AS role,
-         json_extract(p.data,'$.type')               AS part_type,
-         json_extract(p.data,'$.tool')               AS tool,
-         json_extract(p.data,'$.state.status')        AS tool_status,
-         json_extract(p.data,'$.state.input')         AS input,
-         json_extract(p.data,'$.state.output')        AS output,
-         json_extract(p.data,'$.state.metadata.diff') AS diff
-  FROM message m JOIN part p ON p.message_id = m.id
-  WHERE m.session_id = '$SESSION_ID'
-  ORDER BY m.time_created, p.time_created;
+Start with:
+  audit_trajectory(session_id: "$SESSION_ID", offset: 0, limit: 50)
+
+If the result says hasMore is true, keep paging with nextOffset until you have read the parts needed to judge the claims:
+  audit_trajectory(session_id: "$SESSION_ID", offset: <nextOffset>, limit: 50)
+
+For agent-specific follow-up, pass agent_id only when the evidence requires a narrower slice. Do not substitute history, memory, bash, sqlite, or ad-hoc file reads for the trajectory record. If audit_trajectory cannot be called or returns an error, report that the audit cannot read the ledger instead of guessing.
 
 # What you are checking
 Work through the record in two passes.
 
 Pass 1 — Collect the claims. Find everything the working agent stated it did or completed: "I implemented X", "tests pass", "fixed the bug", "added the file", etc. List them.
 
-Pass 2 — Check each claim against the record, one at a time. For each claim, look in the trajectory for the objective trace that would prove it — a tool call, an exit code, a diff, a file write, or the agent's own text. Then classify the claim into exactly one of these outcomes:
+Pass 2 — Check each claim against the record, one at a time. For each claim, look in the audit_trajectory output for the objective trace that would prove it — a tool call, an exit code, a diff, a file write, a tool output/error, or the agent's own text. Treat exit codes, diffs, tool output, tool errors, and metadata as primary audit evidence. Then classify the claim into exactly one of these outcomes:
 
 - DONE — the action trajectory contains a trace, AND that trace supports the claim.
   Example: the agent claims "I ran the tests and they passed"; the trajectory contains the matching test command and exit code 0 → DONE.
