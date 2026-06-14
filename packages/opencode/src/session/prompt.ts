@@ -133,6 +133,17 @@ export function subtaskContinuationPrompt(command: string | undefined) {
   return "Summarize the actor tool output above and continue with your task."
 }
 
+/** @internal Exported for unit testing atlas report parsing. */
+export function parseOverallVerdict(output: string): "done" | "not_done" | "unreadable" {
+  const line = output
+    .split(/\r?\n/)
+    .filter((item) => /^[ \t]*OVERALL_VERDICT:/i.test(item))
+    .at(-1)
+  const match = line?.match(/^[ \t]*OVERALL_VERDICT:[ \t]*(DONE|NOT_DONE)[ \t]*$/i)
+  if (!match) return "unreadable"
+  return match[1].toUpperCase() === "DONE" ? "done" : "not_done"
+}
+
 function auditLedgerBlock(input: {
   sessionID: SessionID
   anchor: PartID
