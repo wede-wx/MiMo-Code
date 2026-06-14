@@ -1564,3 +1564,27 @@ test("tracks changes from a nested dev directory without doubling worktree-relat
     warn.mockRestore()
   }
 })
+
+test("restore writes a snapshot back to the worktree from a nested dev directory", async () => {
+  await using tmp = await tmpdir({
+    git: true,
+    init: async (dir) => {
+      await fs.mkdir(path.join(dir, "packages", "opencode", "src"), { recursive: true })
+      await Filesystem.write(path.join(dir, "packages", "opencode", "src", "index.ts"), "console.log('before')\n")
+      await $`git add .`.cwd(dir).quiet()
+      await $`git commit -m nested-dev-layout`.cwd(dir).quiet()
+    },
+  })
+
+  const directory = path.join(tmp.path, "packages", "opencode")
+  const file = path.join(directory, "src", "restore.ts")
+  await Filesystem.write(file, "console.log('snapshot')\n")
+
+  const snapshot = await run(directory, (snapshot) => snapshot.track())
+  expect(snapshot).toBeTruthy()
+
+  await fs.rm(file)
+  await run(directory, (snapshotService) => snapshotService.restore(snapshot!))
+
+  expect(await fs.readFile(file, "utf-8")).toBe("console.log('snapshot')\n")
+})
