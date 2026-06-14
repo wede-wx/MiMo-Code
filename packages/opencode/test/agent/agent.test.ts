@@ -758,34 +758,48 @@ test("bounded computation agents are exactly title, summary, compaction, checkpo
   })
 })
 
-test("atlas auditor agent is a hidden read-only subagent", async () => {
-  await using tmp = await tmpdir()
-  await Instance.provide({
-    directory: tmp.path,
-    fn: async () => {
-      const atlas = await load(tmp.path, (svc) => svc.get("atlas"))
+itTool.live("atlas auditor agent is a hidden read-only subagent", () =>
+  provideTmpdirInstance(() =>
+    Effect.gen(function* () {
+      const agents = yield* Agent.Service
+      const atlas = yield* agents.get("atlas")
       expect(atlas).toBeDefined()
       expect(atlas?.mode).toBe("subagent")
       expect(atlas?.native).toBe(true)
       expect(atlas?.hidden).toBe(true)
       expect(atlas?.isolateInstructions).toBe(true)
-      expect(atlas?.toolAllowlist).toEqual(["read", "glob", "grep", "history", "audit_trajectory", "bash"])
+      expect(atlas?.toolAllowlist).toEqual(["read", "glob", "grep", "history", "audit_trajectory"])
       expect(atlas?.toolAllowlist).not.toContain("write")
       expect(atlas?.toolAllowlist).not.toContain("edit")
       expect(atlas?.toolAllowlist).not.toContain("memory")
+      expect(atlas?.toolAllowlist).not.toContain("bash")
       expect(Permission.evaluate("read", "any/path", atlas!.permission).action).toBe("allow")
       expect(Permission.evaluate("glob", "any/path", atlas!.permission).action).toBe("allow")
       expect(Permission.evaluate("grep", "any/path", atlas!.permission).action).toBe("allow")
       expect(Permission.evaluate("history", "any/path", atlas!.permission).action).toBe("allow")
       expect(Permission.evaluate("audit_trajectory", "ses_test", atlas!.permission).action).toBe("allow")
-      expect(Permission.evaluate("bash", "sqlite3 --readonly mimocode.db", atlas!.permission).action).toBe("allow")
       expect(Permission.evaluate("write", "any/path", atlas!.permission).action).toBe("deny")
       expect(Permission.evaluate("edit", "any/path", atlas!.permission).action).toBe("deny")
       expect(Permission.evaluate("memory", "any/path", atlas!.permission).action).toBe("deny")
+      expect(Permission.disabled(["read", "glob", "grep", "history", "audit_trajectory", "bash"], atlas!.permission).has("bash")).toBe(true)
       expect(SYSTEM_SPAWNED_AGENT_TYPES.has("atlas")).toBe(true)
-    },
-  })
-})
+
+      const registry = yield* ToolRegistry.Service
+      const tools = yield* registry.tools({
+        providerID: ProviderID.make("test"),
+        modelID: ModelID.make("test-model"),
+        agent: atlas!,
+      })
+      const ids = tools.map((tool) => tool.id)
+      expect(ids).toContain("read")
+      expect(ids).toContain("glob")
+      expect(ids).toContain("grep")
+      expect(ids).toContain("history")
+      expect(ids).toContain("audit_trajectory")
+      expect(ids).not.toContain("bash")
+    }),
+  ),
+)
 
 test("checkpoint-writer inherits default permission (no bespoke block); memory writes governed by memory-path-guard", async () => {
   await using tmp = await tmpdir()

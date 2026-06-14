@@ -122,7 +122,7 @@ function tableCounts() {
 }
 
 describe("AuditTrajectoryTool", () => {
-  registryIt.live("is registered and exposed to atlas while bash remains as the step-1 safety net", () =>
+  registryIt.live("is registered and exposed to atlas without exposing bash", () =>
     provideTmpdirInstance(() =>
       Effect.gen(function* () {
         const agents = yield* Agent.Service
@@ -136,7 +136,7 @@ describe("AuditTrajectoryTool", () => {
         const ids = tools.map((tool) => tool.id)
 
         expect(ids).toContain("audit_trajectory")
-        expect(ids).toContain("bash")
+        expect(ids).not.toContain("bash")
       }),
     ),
   )

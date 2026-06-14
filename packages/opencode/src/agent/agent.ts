@@ -385,11 +385,10 @@ export const layer = Layer.effect(
                 grep: "allow",
                 history: "allow",
                 audit_trajectory: "allow",
-                bash: "allow",
               }),
               user,
             ),
-            toolAllowlist: ["read", "glob", "grep", "history", "audit_trajectory", "bash"],
+            toolAllowlist: ["read", "glob", "grep", "history", "audit_trajectory"],
           },
         }
 
