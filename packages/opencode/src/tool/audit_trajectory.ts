@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import z from "zod"
-import { and, asc, count, Database, eq } from "@/storage"
+import { and, asc, count, Database, eq, gt } from "@/storage"
 import { MessageTable, PartTable } from "@/session/session.sql"
 import { SessionID } from "@/session/schema"
 import DESCRIPTION from "./audit_trajectory.txt"
@@ -12,6 +12,12 @@ const encoder = new TextEncoder()
 const parameters = z.object({
   session_id: z.string().describe("Session id to audit."),
   agent_id: z.string().optional().describe("Optional message agent_id slice. Omit to read the whole session."),
+  after_time: z
+    .number()
+    .int()
+    .nonnegative()
+    .optional()
+    .describe("Only return parts with part_time_created > after_time (epoch ms). Omit = no lower bound."),
   offset: z.number().int().nonnegative().optional().describe("Part offset, default 0."),
   limit: z.number().int().positive().max(200).optional().describe("Max parts, default 50, max 200."),
 })
@@ -105,9 +111,10 @@ export const AuditTrajectoryTool = Tool.define(
         const offset = input.offset ?? 0
         const limit = input.limit ?? 50
         const sessionID = SessionID.make(input.session_id)
-        const where = input.agent_id
-          ? and(eq(PartTable.session_id, sessionID), eq(MessageTable.agent_id, input.agent_id))
-          : eq(PartTable.session_id, sessionID)
+        const conds = [eq(PartTable.session_id, sessionID)]
+        if (input.agent_id) conds.push(eq(MessageTable.agent_id, input.agent_id))
+        if (input.after_time !== undefined) conds.push(gt(PartTable.time_created, input.after_time))
+        const where = and(...conds)
         const total =
           Database.use((db) =>
             db

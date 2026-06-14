@@ -235,6 +235,72 @@ describe("AuditTrajectoryTool", () => {
     ),
   )
 
+  it.live("filters by after_time and composes with agent_id", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        insertProjectAndSession()
+        insertMessage({ id: "m_main_before", role: "assistant", agentID: "main", time: now + 1 })
+        insertPart({
+          id: "p_main_before",
+          messageID: "m_main_before",
+          time: now + 10,
+          data: { type: "text", text: "main before boundary" },
+        })
+        insertMessage({ id: "m_atlas", role: "assistant", agentID: "atlas-1", time: now + 11 })
+        insertPart({
+          id: "p_atlas",
+          messageID: "m_atlas",
+          time: now + 15,
+          data: { type: "text", text: "atlas audit part" },
+        })
+        insertMessage({ id: "m_main_boundary", role: "assistant", agentID: "main", time: now + 16 })
+        insertPart({
+          id: "p_main_boundary",
+          messageID: "m_main_boundary",
+          time: now + 20,
+          data: { type: "text", text: "main at boundary" },
+        })
+        insertMessage({ id: "m_main_after", role: "assistant", agentID: "main", time: now + 21 })
+        insertPart({
+          id: "p_main_after",
+          messageID: "m_main_after",
+          time: now + 30,
+          data: { type: "text", text: "main after boundary" },
+        })
+
+        const info = yield* AuditTrajectoryTool
+        const tool = yield* info.init()
+        const all = yield* tool.execute({ session_id: "ses_audit" }, ctx as any)
+        const after = yield* tool.execute({ session_id: "ses_audit", after_time: now + 20 } as any, ctx as any)
+        const main = yield* tool.execute({ session_id: "ses_audit", agent_id: "main" }, ctx as any)
+        const mainAfter = yield* tool.execute(
+          { session_id: "ses_audit", agent_id: "main", after_time: now + 20 } as any,
+          ctx as any,
+        )
+
+        expect(all.metadata.total).toBe(4)
+        expect(all.metadata.returned).toBe(4)
+        expect(after.metadata.total).toBe(1)
+        expect(after.metadata.returned).toBe(1)
+        expect(after.output).toContain("main after boundary")
+        expect(after.output).not.toContain("main before boundary")
+        expect(after.output).not.toContain("main at boundary")
+        expect(after.output).not.toContain("atlas audit part")
+        expect(main.metadata.total).toBe(3)
+        expect(main.output).toContain("main before boundary")
+        expect(main.output).toContain("main at boundary")
+        expect(main.output).toContain("main after boundary")
+        expect(main.output).not.toContain("atlas audit part")
+        expect(mainAfter.metadata.total).toBe(1)
+        expect(mainAfter.metadata.returned).toBe(1)
+        expect(mainAfter.output).toContain("main after boundary")
+        expect(mainAfter.output).not.toContain("main before boundary")
+        expect(mainAfter.output).not.toContain("main at boundary")
+        expect(mainAfter.output).not.toContain("atlas audit part")
+      }),
+    ),
+  )
+
   it.live("paginates by part without overlap and disables framework truncation", () =>
     provideTmpdirInstance(() =>
       Effect.gen(function* () {
