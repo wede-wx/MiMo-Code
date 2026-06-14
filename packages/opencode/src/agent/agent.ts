@@ -47,6 +47,7 @@ export const Info = z
     modelRef: z.string().optional(),
     variant: z.string().optional(),
     prompt: z.string().optional(),
+    isolateInstructions: z.boolean().optional(),
     options: z.record(z.string(), z.any()),
     steps: z.number().int().positive().optional(),
     toolAllowlist: z.array(z.string()).optional(),
@@ -373,6 +374,7 @@ export const layer = Layer.effect(
             options: {},
             native: true,
             hidden: true,
+            isolateInstructions: true,
             prompt: PROMPT_ATLAS,
             permission: Permission.merge(
               defaults,

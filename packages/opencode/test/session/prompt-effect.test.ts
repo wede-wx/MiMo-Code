@@ -2,6 +2,8 @@ import { NodeFileSystem } from "@effect/platform-node"
 import { FetchHttpClient } from "effect/unstable/http"
 import { afterEach, expect } from "bun:test"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer } from "effect"
+import fs from "fs/promises"
+import os from "os"
 import path from "path"
 import { Agent as AgentSvc } from "../../src/agent/agent"
 import { Bus } from "../../src/bus"
@@ -95,6 +97,30 @@ function withSh<A, E, R>(fx: () => Effect.Effect<A, E, R>) {
         Shell.preferred.reset()
       }),
   )
+}
+
+function withHomedir<A, E, R>(dir: string, fx: () => Effect.Effect<A, E, R>) {
+  return Effect.acquireUseRelease(
+    Effect.sync(() => {
+      const original = os.homedir
+      os.homedir = () => dir
+      return original
+    }),
+    () => fx(),
+    (original) => Effect.sync(() => void (os.homedir = original)),
+  )
+}
+
+function systemText(input: Record<string, unknown>) {
+  const messages = Array.isArray(input.messages) ? input.messages : []
+  return messages
+    .flatMap((msg) => {
+      if (!msg || typeof msg !== "object") return []
+      if (!("role" in msg) || msg.role !== "system") return []
+      if (!("content" in msg) || typeof msg.content !== "string") return []
+      return [msg.content]
+    })
+    .join("\n")
 }
 
 function toolPart(parts: MessageV2.Part[]) {
@@ -443,6 +469,56 @@ it.live("static loop returns assistant text through local provider", () =>
       expect(result.parts.some((part) => part.type === "text" && part.text === "world")).toBe(true)
       expect(yield* llm.hits).toHaveLength(1)
       expect(yield* llm.pending).toBe(0)
+    }),
+    { git: true, config: providerCfg },
+  ),
+)
+
+it.live("atlas system prompt skips CLAUDE.md while normal subagents still receive it", () =>
+  provideTmpdirServer(
+    Effect.fnUntraced(function* ({ dir, llm }) {
+      const probe = "ATLAS_INSTRUCTION_ISOLATION_PROBE_韦鲜"
+      yield* Effect.promise(() => fs.mkdir(path.join(dir, ".claude"), { recursive: true }))
+      yield* Effect.promise(() => Bun.write(path.join(dir, ".claude", "CLAUDE.md"), probe))
+
+      yield* withHomedir(dir, () =>
+        Effect.gen(function* () {
+          const prompt = yield* SessionPrompt.Service
+          const sessions = yield* Session.Service
+          const atlas = yield* sessions.create({
+            title: "Atlas isolation",
+            permission: [{ permission: "*", pattern: "*", action: "allow" }],
+          })
+
+          yield* llm.text("atlas report")
+          yield* prompt.prompt({
+            sessionID: atlas.id,
+            agent: "atlas",
+            model: ref,
+            parts: [{ type: "text", text: "audit this session" }],
+          })
+
+          const atlasSystem = systemText((yield* llm.inputs).at(-1)!)
+          expect(atlasSystem).toContain("You are Atlas")
+          expect(atlasSystem).not.toContain(probe)
+
+          yield* llm.reset
+
+          const general = yield* sessions.create({
+            title: "General control",
+            permission: [{ permission: "*", pattern: "*", action: "allow" }],
+          })
+          yield* llm.text("general response")
+          yield* prompt.prompt({
+            sessionID: general.id,
+            agent: "general",
+            model: ref,
+            parts: [{ type: "text", text: "answer normally" }],
+          })
+
+          expect(systemText((yield* llm.inputs).at(-1)!)).toContain(probe)
+        }),
+      )
     }),
     { git: true, config: providerCfg },
   ),

@@ -2733,7 +2733,9 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             const [skills, env, instructions] = yield* Effect.all([
               sys.skills(agent),
               Effect.sync(() => sys.environment(model)),
-              instruction.system().pipe(Effect.orDie),
+              agent.isolateInstructions
+                ? Effect.succeed({ paths: new Set<string>(), content: [] })
+                : instruction.system().pipe(Effect.orDie),
             ])
             // Surface which instruction files (CLAUDE.md, AGENTS.md, ...) were loaded.
             // Only for primary sessions (subagents would be noisy) and once per session.

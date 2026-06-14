@@ -768,6 +768,7 @@ test("atlas auditor agent is a hidden read-only subagent", async () => {
       expect(atlas?.mode).toBe("subagent")
       expect(atlas?.native).toBe(true)
       expect(atlas?.hidden).toBe(true)
+      expect(atlas?.isolateInstructions).toBe(true)
       expect(atlas?.toolAllowlist).toEqual(["read", "glob", "grep", "history", "bash"])
       expect(atlas?.toolAllowlist).not.toContain("write")
       expect(atlas?.toolAllowlist).not.toContain("edit")
