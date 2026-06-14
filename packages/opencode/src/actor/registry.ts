@@ -1,5 +1,5 @@
 import { Effect, Layer, Context, Schedule } from "effect"
-import { Database, inArray, eq, and, lte, sql } from "@/storage"
+import { Database, inArray, eq, and, desc, lte, sql } from "@/storage"
 import { Bus } from "@/bus"
 import type { SessionID, MessageID } from "@/session/schema"
 import { ActorRegistryTable } from "./actor.sql"
@@ -71,6 +71,7 @@ export interface Interface {
   readonly listActive: () => Effect.Effect<Actor[]>
   readonly listByParent: (sessionID: SessionID, parentActorID: string) => Effect.Effect<Actor[]>
   readonly renderForAgent: (sessionID: SessionID) => Effect.Effect<string>
+  readonly lastAuditTime: (sessionID: SessionID) => Effect.Effect<number | undefined>
   readonly agentTypeFor: (sessionID: SessionID, actorID: string) => Effect.Effect<string>
   readonly isSystemSpawned: (sessionID: SessionID, actorID: string) => Effect.Effect<boolean>
   readonly allocateActorID: (sessionID: SessionID, agentType: string) => Effect.Effect<string>
@@ -292,6 +293,27 @@ export const layer: Layer.Layer<Service, never, Bus.Service> = Layer.effect(
       return lines.join("\n")
     })
 
+    const lastAuditTime = Effect.fn("ActorRegistry.lastAuditTime")(function* (sessionID: SessionID) {
+      const row = yield* Effect.sync(() =>
+        Database.use((db) =>
+          db
+            .select({ time_created: ActorRegistryTable.time_created })
+            .from(ActorRegistryTable)
+            .where(
+              and(
+                eq(ActorRegistryTable.session_id, sessionID),
+                eq(ActorRegistryTable.agent, "atlas"),
+                eq(ActorRegistryTable.last_outcome, "success"),
+              ),
+            )
+            .orderBy(desc(ActorRegistryTable.time_created))
+            .limit(1)
+            .get(),
+        ),
+      )
+      return row?.time_created
+    })
+
     const agentTypeFor = Effect.fn("ActorRegistry.agentTypeFor")(function* (
       sessionID: SessionID,
       actorID: string,
@@ -400,6 +422,7 @@ export const layer: Layer.Layer<Service, never, Bus.Service> = Layer.effect(
       listActive,
       listByParent,
       renderForAgent,
+      lastAuditTime,
       agentTypeFor,
       isSystemSpawned,
       allocateActorID,

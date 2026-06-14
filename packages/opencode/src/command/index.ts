@@ -173,9 +173,9 @@ export const layer = Layer.effect(
         source: "command",
         subtask: true,
         get template() {
-          return "Audit session $SESSION_ID. Read the trajectory database (read-only) and report what was actually done versus what was claimed."
+          return "Audit session $SESSION_ID. Audit ONLY the working agent's actions after epoch-ms boundary $AUDIT_SINCE (a number, or the literal none = no prior audit -> audit the whole session from the start). Read the trajectory database (read-only) and report what was actually done versus what was claimed."
         },
-        hints: ["$SESSION_ID"],
+        hints: ["$SESSION_ID", "$AUDIT_SINCE"],
       }
       commands[Default.GOAL] = {
         name: Default.GOAL,

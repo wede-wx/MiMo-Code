@@ -94,6 +94,37 @@ export function recallHintLines(toolCfg: ToolStyleConfig | undefined): string[] 
   return [`- memory({ operation: "search", query: "<keyword>" })`, taskHint, actorHint]
 }
 
+/** @internal Exported for unit testing command variable rendering. */
+export function renderCommandTemplate(input: {
+  templateCommand: string
+  arguments: string
+  sessionID: SessionID
+  auditSince?: string
+}) {
+  const raw = input.arguments.match(argsRegex) ?? []
+  const args = raw.map((arg) => arg.replace(quoteTrimRegex, ""))
+  const placeholders = input.templateCommand.match(placeholderRegex) ?? []
+  const last = placeholders.map((item) => Number(item.slice(1))).reduce((max, value) => Math.max(max, value), 0)
+
+  const withArgs = input.templateCommand.replaceAll(placeholderRegex, (_, index) => {
+    const position = Number(index)
+    const argIndex = position - 1
+    if (argIndex >= args.length) return ""
+    if (position === last) return args.slice(argIndex).join(" ")
+    return args[argIndex]
+  })
+  const usesArgumentsPlaceholder = input.templateCommand.includes("$ARGUMENTS")
+  const template = withArgs
+    .replaceAll("$ARGUMENTS", input.arguments)
+    .replaceAll("$SESSION_ID", input.sessionID)
+    .replaceAll("$AUDIT_SINCE", input.auditSince ?? "none")
+
+  if (placeholders.length === 0 && !usesArgumentsPlaceholder && input.arguments.trim()) {
+    return template + "\n\n" + input.arguments
+  }
+  return template
+}
+
 function auditLedgerBlock(input: {
   sessionID: SessionID
   anchor: PartID
@@ -3056,34 +3087,20 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         yield* goal.set(input.sessionID, condition)
       }
 
-      const raw = input.arguments.match(argsRegex) ?? []
-      const args = raw.map((arg) => arg.replace(quoteTrimRegex, ""))
       const templateCommand = yield* Effect.promise(async () => cmd.template)
 
       let template: string
       if (cmd.source === "skill") {
         template = input.arguments
       } else {
-        const placeholders = templateCommand.match(placeholderRegex) ?? []
-        let last = 0
-        for (const item of placeholders) {
-          const value = Number(item.slice(1))
-          if (value > last) last = value
-        }
-
-        const withArgs = templateCommand.replaceAll(placeholderRegex, (_, index) => {
-          const position = Number(index)
-          const argIndex = position - 1
-          if (argIndex >= args.length) return ""
-          if (position === last) return args.slice(argIndex).join(" ")
-          return args[argIndex]
+        template = renderCommandTemplate({
+          templateCommand,
+          arguments: input.arguments,
+          sessionID: input.sessionID,
+          auditSince: templateCommand.includes("$AUDIT_SINCE")
+            ? String((yield* actorRegistry.lastAuditTime(input.sessionID)) ?? "none")
+            : undefined,
         })
-        const usesArgumentsPlaceholder = templateCommand.includes("$ARGUMENTS")
-        template = withArgs.replaceAll("$ARGUMENTS", input.arguments).replaceAll("$SESSION_ID", input.sessionID)
-
-        if (placeholders.length === 0 && !usesArgumentsPlaceholder && input.arguments.trim()) {
-          template = template + "\n\n" + input.arguments
-        }
       }
 
       const shellMatches = ConfigMarkdown.shell(template)

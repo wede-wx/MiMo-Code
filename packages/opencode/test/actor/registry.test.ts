@@ -3,7 +3,9 @@ import { Effect, Layer, ManagedRuntime } from "effect"
 import { Instance } from "../../src/project/instance"
 import { Session } from "../../src/session"
 import { ActorRegistry } from "../../src/actor/registry"
+import { ActorRegistryTable } from "../../src/actor/actor.sql"
 import { SessionID } from "../../src/session/schema"
+import { and, Database, eq } from "../../src/storage"
 import { Log } from "../../src/util"
 import { tmpdir } from "../fixture/fixture"
 
@@ -261,6 +263,131 @@ describe("ActorRegistry", () => {
 
         const after = await rt.runPromise(ActorRegistry.Service.use((svc) => svc.get(parent.id, taskId)))
         expect(after!.turnCount).toBe(2)
+      })
+    })
+  })
+
+  describe("lastAuditTime", () => {
+    test("returns latest successful atlas actor creation time and ignores failures", async () => {
+      await using tmp = await tmpdir({ git: true })
+      await withRegistry(tmp.path, async (rt) => {
+        const session = await rt.runPromise(Session.Service.use((svc) => svc.create()))
+
+        await rt.runPromise(
+          ActorRegistry.Service.use((svc) =>
+            svc.register({
+              sessionID: session.id,
+              actorID: "atlas-1",
+              mode: "subagent",
+              agent: "atlas",
+              description: "failed audit",
+              contextMode: "none",
+              background: false,
+              lifecycle: "ephemeral",
+            }),
+          ),
+        )
+        await rt.runPromise(
+          ActorRegistry.Service.use((svc) =>
+            svc.register({
+              sessionID: session.id,
+              actorID: "atlas-2",
+              mode: "subagent",
+              agent: "atlas",
+              description: "first successful audit",
+              contextMode: "none",
+              background: false,
+              lifecycle: "ephemeral",
+            }),
+          ),
+        )
+        await rt.runPromise(
+          ActorRegistry.Service.use((svc) =>
+            svc.register({
+              sessionID: session.id,
+              actorID: "atlas-3",
+              mode: "subagent",
+              agent: "atlas",
+              description: "latest successful audit",
+              contextMode: "none",
+              background: false,
+              lifecycle: "ephemeral",
+            }),
+          ),
+        )
+        await rt.runPromise(
+          ActorRegistry.Service.use((svc) =>
+            svc.register({
+              sessionID: session.id,
+              actorID: "explore-1",
+              mode: "subagent",
+              agent: "explore",
+              description: "successful non-atlas actor",
+              contextMode: "none",
+              background: false,
+              lifecycle: "ephemeral",
+            }),
+          ),
+        )
+
+        Database.use((db) => {
+          for (const item of [
+            { actorID: "atlas-1", time: 100 },
+            { actorID: "atlas-2", time: 200 },
+            { actorID: "atlas-3", time: 300 },
+            { actorID: "explore-1", time: 400 },
+          ]) {
+            db.update(ActorRegistryTable)
+              .set({ time_created: item.time, time_updated: item.time })
+              .where(
+                and(eq(ActorRegistryTable.session_id, session.id), eq(ActorRegistryTable.actor_id, item.actorID)),
+              )
+              .run()
+          }
+        })
+
+        await rt.runPromise(
+          ActorRegistry.Service.use((svc) => svc.updateStatus(session.id, "atlas-1", { status: "idle", lastOutcome: "failure" })),
+        )
+        await rt.runPromise(
+          ActorRegistry.Service.use((svc) => svc.updateStatus(session.id, "atlas-2", { status: "idle", lastOutcome: "success" })),
+        )
+        await rt.runPromise(
+          ActorRegistry.Service.use((svc) => svc.updateStatus(session.id, "atlas-3", { status: "idle", lastOutcome: "success" })),
+        )
+        await rt.runPromise(
+          ActorRegistry.Service.use((svc) => svc.updateStatus(session.id, "explore-1", { status: "idle", lastOutcome: "success" })),
+        )
+
+        const result = await rt.runPromise(ActorRegistry.Service.use((svc) => svc.lastAuditTime(session.id)))
+        expect(result).toBe(300)
+      })
+    })
+
+    test("returns undefined when no successful atlas actor exists", async () => {
+      await using tmp = await tmpdir({ git: true })
+      await withRegistry(tmp.path, async (rt) => {
+        const session = await rt.runPromise(Session.Service.use((svc) => svc.create()))
+        await rt.runPromise(
+          ActorRegistry.Service.use((svc) =>
+            svc.register({
+              sessionID: session.id,
+              actorID: "atlas-1",
+              mode: "subagent",
+              agent: "atlas",
+              description: "failed audit",
+              contextMode: "none",
+              background: false,
+              lifecycle: "ephemeral",
+            }),
+          ),
+        )
+        await rt.runPromise(
+          ActorRegistry.Service.use((svc) => svc.updateStatus(session.id, "atlas-1", { status: "idle", lastOutcome: "failure" })),
+        )
+
+        const result = await rt.runPromise(ActorRegistry.Service.use((svc) => svc.lastAuditTime(session.id)))
+        expect(result).toBeUndefined()
       })
     })
   })

@@ -34,6 +34,7 @@ const stubActorRegistry = Layer.succeed(
     listActive: () => Effect.succeed([]),
     listByParent: () => Effect.succeed([]),
     renderForAgent: () => Effect.succeed(""),
+    lastAuditTime: () => Effect.succeed(undefined),
     agentTypeFor: () => Effect.succeed("main"),
     // Force the guard inside tryStartCheckpointWriter to fire by always reporting true.
     isSystemSpawned: () => Effect.succeed(true),
