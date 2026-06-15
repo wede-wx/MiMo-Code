@@ -152,6 +152,8 @@ type AtlasContinuationDecision =
 
 const ATLAS_AUDIT_ATTEMPT_PATTERN = /\[atlas-audit-attempt:(\d+)\]/
 const ATLAS_AUDIT_ATTEMPT_TOKEN_PATTERN = /\s*\[atlas-audit-attempt:\d+\]/g
+const ATLAS_AUDIT_SINCE_PATTERN = /\[atlas-audit-since:([^\]]+)\]/
+const ATLAS_AUDIT_SINCE_TOKEN_PATTERN = /\s*\[atlas-audit-since:[^\]]+\]/g
 const ATLAS_REWORK_ATTEMPT_METADATA_KEY = "atlas_rework_attempt"
 const MAX_ATLAS_REWORK_ATTEMPT = 3
 
@@ -169,6 +171,17 @@ export function atlasAuditAttemptFromDescription(description: string) {
   const attempt = Number(match[1])
   if (!Number.isInteger(attempt) || attempt < 0) return 0
   return attempt
+}
+
+/** @internal Exported for unit testing atlas audit since markers. */
+export function encodeAtlasAuditSince(description: string, auditSince: string) {
+  const clean = description.replace(ATLAS_AUDIT_SINCE_TOKEN_PATTERN, "").trim()
+  return `${clean}${clean ? " " : ""}[atlas-audit-since:${auditSince}]`
+}
+
+/** @internal Exported for unit testing atlas audit since markers. */
+export function atlasAuditSinceFromDescription(description: string) {
+  return description.match(ATLAS_AUDIT_SINCE_PATTERN)?.[1]
 }
 
 /** @internal Exported for unit testing atlas re-audit idempotence. */

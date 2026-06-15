@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test"
+import { COMMAND_INTERNAL_SUBAGENT_TYPES, SYSTEM_SPAWNED_AGENT_TYPES } from "../../src/agent/config"
 import {
   atlasAuditAttemptFromDescription,
+  atlasAuditSinceFromDescription,
   encodeAtlasAuditAttemptDescription,
+  encodeAtlasAuditSince,
   parseOverallVerdict,
   shouldTriggerAtlasReaudit,
   subtaskContinuationDecision,
@@ -72,6 +75,34 @@ describe("atlas audit rework orchestration helpers", () => {
 
     expect(description).toContain("[atlas-audit-attempt:2]")
     expect(atlasAuditAttemptFromDescription(description)).toBe(2)
+  })
+
+  test("encodes and decodes atlas audit since boundaries without disturbing attempt markers", () => {
+    expect(encodeAtlasAuditSince("", "200")).toBe("[atlas-audit-since:200]")
+    expect(encodeAtlasAuditSince("audit the current session", "200")).toBe("audit the current session [atlas-audit-since:200]")
+    expect(encodeAtlasAuditSince("audit the current session", "none")).toContain("[atlas-audit-since:none]")
+    expect(encodeAtlasAuditSince("audit [atlas-audit-since:100]", "200")).toBe("audit [atlas-audit-since:200]")
+
+    const withAttempt = encodeAtlasAuditSince("audit [atlas-audit-attempt:2]", "200")
+    expect(withAttempt).toContain("[atlas-audit-attempt:2]")
+    expect(withAttempt).toContain("[atlas-audit-since:200]")
+    expect(atlasAuditAttemptFromDescription(withAttempt)).toBe(2)
+    expect(atlasAuditSinceFromDescription(withAttempt)).toBe("200")
+  })
+
+  test("reads atlas audit since boundaries and keeps them separate from attempt markers", () => {
+    expect(atlasAuditSinceFromDescription("audit [atlas-audit-since:200]")).toBe("200")
+    expect(atlasAuditSinceFromDescription("audit [atlas-audit-since:none]")).toBe("none")
+    expect(atlasAuditSinceFromDescription("audit the current session")).toBeUndefined()
+    expect(atlasAuditSinceFromDescription("audit [atlas-audit-attempt:2] [atlas-audit-since:300]")).toBe("300")
+    expect(atlasAuditSinceFromDescription(encodeAtlasAuditSince("x", "200"))).toBe("200")
+  })
+
+  test("registers atlas appeal as system-spawned and command-internal while preserving atlas", () => {
+    expect(COMMAND_INTERNAL_SUBAGENT_TYPES.has("atlas")).toBe(true)
+    expect(COMMAND_INTERNAL_SUBAGENT_TYPES.has("atlas-appeal")).toBe(true)
+    expect(SYSTEM_SPAWNED_AGENT_TYPES.has("atlas")).toBe(true)
+    expect(SYSTEM_SPAWNED_AGENT_TYPES.has("atlas-appeal")).toBe(true)
   })
 
   test("treats manual atlas subtasks without an attempt marker as attempt zero", () => {
