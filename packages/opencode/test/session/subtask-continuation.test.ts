@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import { COMMAND_INTERNAL_SUBAGENT_TYPES, SYSTEM_SPAWNED_AGENT_TYPES } from "../../src/agent/config"
+import { MessageV2 } from "../../src/session/message-v2"
+import { MessageID } from "../../src/session/schema"
 import {
   atlasAuditAttemptFromDescription,
+  atlasAppealAfterMessage,
   atlasAuditSinceFromDescription,
   atlasCommandAuditDescription,
   atlasReauditDescription,
@@ -26,6 +29,7 @@ describe("subtaskContinuationPrompt", () => {
   test("injects rework wording only for atlas NOT_DONE verdicts", () => {
     const text = subtaskContinuationPrompt("atlas", "not_done")
 
+    expect(text).toContain("APPEAL:")
     expect(text).toContain("NOT_DONE")
     expect(text).toContain("Rework")
     expect(text).toContain("Continue with your task")
@@ -61,6 +65,7 @@ describe("subtaskContinuationPrompt", () => {
 
     expect(decision.kind).toBe("give_up")
     expect(decision.text).toContain("3 rework attempts")
+    expect(decision.text).not.toContain("APPEAL:")
     expect(decision.reworkAttempt).toBeUndefined()
   })
 
@@ -118,6 +123,29 @@ describe("atlas audit rework orchestration helpers", () => {
     expect(atlasAuditSinceFromDescription(atlas)).toBe("none")
     expect(atlasCommandAuditDescription("distill", "distill current session", undefined)).toBe("distill current session")
     expect(atlasCommandAuditDescription("distill", "distill current session", "400")).toBe("distill current session")
+  })
+
+  test("detects whether an atlas appeal subtask already exists after a message", () => {
+    const msg = (id: string, parts: MessageV2.Part[] = []) =>
+      ({ info: { id: MessageID.ascending(id) }, parts }) as MessageV2.WithParts
+    const appealPart = {
+      type: "subtask",
+      command: "atlas-appeal",
+      description: "appeal",
+      agent: "atlas-appeal",
+      prompt: "appeal",
+    } as MessageV2.SubtaskPart
+
+    expect(atlasAppealAfterMessage([msg("msg_one"), msg("msg_two", [appealPart])], MessageID.ascending("msg_one"))).toBe(true)
+    expect(atlasAppealAfterMessage([msg("msg_one"), msg("msg_two")], MessageID.ascending("msg_one"))).toBe(false)
+    expect(atlasAppealAfterMessage([msg("msg_one"), msg("msg_two", [appealPart])], MessageID.ascending("msg_missing"))).toBe(false)
+  })
+
+  test("derives appeal audit boundary and attempt from the appealed atlas description", () => {
+    const description = atlasReauditDescription("audit the current session", 2, "200")
+
+    expect(atlasAuditSinceFromDescription(description)).toBe("200")
+    expect(atlasAuditAttemptFromDescription(description)).toBe(2)
   })
 
   test("registers atlas appeal as system-spawned and command-internal while preserving atlas", () => {

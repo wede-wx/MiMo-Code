@@ -259,6 +259,17 @@ function atlasAuditAttemptsAfterMessage(msgs: MessageV2.WithParts[], messageID: 
     )
 }
 
+/** @internal Exported for unit testing atlas appeal idempotence. */
+export function atlasAppealAfterMessage(msgs: MessageV2.WithParts[], messageID: MessageID) {
+  const index = msgs.findIndex((msg) => msg.info.id === messageID)
+  if (index === -1) return false
+  return msgs
+    .slice(index + 1)
+    .some((msg) =>
+      msg.parts.some((part): part is MessageV2.SubtaskPart => part.type === "subtask" && part.command === "atlas-appeal"),
+    )
+}
+
 /** @internal Exported for unit testing command-subtask continuation decisions. */
 export function subtaskContinuationDecision(
   command: string | undefined,
@@ -281,7 +292,7 @@ export function subtaskContinuationDecision(
     return {
       kind: "rework",
       reworkAttempt: auditAttempt + 1,
-      text: "The audit returned OVERALL_VERDICT: NOT_DONE. Rework the task using the audit result above as the source of truth. Continue with your task. Do not restate or summarize the audit verdict.",
+      text: "The audit returned OVERALL_VERDICT: NOT_DONE. Rework the task using the audit result above as the source of truth. If you believe the work was actually done and the audit missed the evidence, you may reply on a single line `APPEAL: <your basis>` to contest it; otherwise rework. Continue with your task. Do not restate or summarize the audit verdict.",
     }
   return {
     kind: "done",
@@ -1323,6 +1334,75 @@ NOTE: At any point in time through this workflow you should feel free to ask the
       } satisfies MessageV2.TextPart)
     })
 
+    const scheduleAtlasAppeal = Effect.fn("SessionPrompt.scheduleAtlasAppeal")(function* (input: {
+      sessionID: SessionID
+      lastUser: MessageV2.User
+      msgs: MessageV2.WithParts[]
+      appealBasis: string
+    }) {
+      if (atlasAppealAfterMessage(input.msgs, input.lastUser.id)) return false
+
+      const appealedAudit = input.msgs
+        .flatMap((msg) => msg.parts)
+        .filter((part): part is MessageV2.SubtaskPart => part.type === "subtask" && part.command === Command.Default.ATLAS)
+        .at(-1)
+      if (!appealedAudit) return false
+
+      const auditSince = atlasAuditSinceFromDescription(appealedAudit.description)
+      const auditSinceStr = auditSince ?? "none"
+      const appealedSnapshot = yield* appealedSnapshotFor({ sessionID: input.sessionID, auditSince })
+      const cmd = yield* commands.get(Command.Default.ATLAS_APPEAL)
+      if (!cmd) return false
+      const templateCommand = yield* Effect.promise(async () => cmd.template)
+      const injectedSnapshotIndex = yield* injectedSnapshotIndexFor({ templateCommand, sessionID: input.sessionID })
+      const template = renderCommandTemplate({
+        templateCommand,
+        arguments: "",
+        sessionID: input.sessionID,
+        auditSince: templateCommand.includes("$AUDIT_SINCE") ? auditSinceStr : undefined,
+        injectedSnapshotIndex,
+        appealedSnapshot,
+        appealBasis: input.appealBasis,
+      }).trim()
+      const templateParts = yield* resolvePromptParts(template)
+      const taskModel = yield* Effect.gen(function* () {
+        if (cmd.model) return Provider.parseModel(cmd.model)
+        if (cmd.agent) {
+          const cmdAgent = yield* agents.get(cmd.agent)
+          if (cmdAgent?.model) return cmdAgent.model
+        }
+        return { providerID: input.lastUser.model.providerID, modelID: input.lastUser.model.modelID }
+      })
+      yield* getModel(taskModel.providerID, taskModel.modelID, input.sessionID)
+
+      const userMsg: MessageV2.User = {
+        id: MessageID.ascending(),
+        sessionID: input.sessionID,
+        role: "user",
+        agentID: input.lastUser.agentID,
+        time: { created: Date.now() },
+        agent: input.lastUser.agent,
+        model: input.lastUser.model,
+      }
+      yield* sessions.updateMessage(userMsg)
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        messageID: userMsg.id,
+        sessionID: input.sessionID,
+        type: "subtask",
+        agent: cmd.agent ?? "atlas-appeal",
+        description: encodeAtlasAuditAttemptDescription(
+          cmd.description ?? "",
+          atlasAuditAttemptFromDescription(appealedAudit.description),
+        ),
+        command: Command.Default.ATLAS_APPEAL,
+        model: { providerID: taskModel.providerID, modelID: taskModel.modelID },
+        prompt: (templateParts.find((part): part is typeof part & { type: "text"; text: string } => part.type === "text"))
+          ?.text ?? "",
+      } satisfies MessageV2.SubtaskPart)
+      return true
+    })
+
     const scheduleAtlasReaudit = Effect.fn("SessionPrompt.scheduleAtlasReaudit")(function* (input: {
       sessionID: SessionID
       lastUser: MessageV2.User
@@ -1339,6 +1419,15 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         existingAuditAttempts: atlasAuditAttemptsAfterMessage(input.msgs, input.lastUser.id),
       })
       if (attempt === undefined) return false
+
+      const lastFinishedText = input.msgs
+        .findLast((msg) => msg.info.id === input.lastFinished?.id)
+        ?.parts
+        .filter((part): part is MessageV2.TextPart => part.type === "text")
+        .map((part) => part.text)
+        .join("\n") ?? ""
+      const appealBasis = parseAppeal(lastFinishedText)
+      if (appealBasis !== undefined) return yield* scheduleAtlasAppeal({ ...input, appealBasis })
 
       const cmd = yield* commands.get(Command.Default.ATLAS)
       if (!cmd) return false
