@@ -56,6 +56,7 @@ import { Team } from "@/team"
 import { Memory } from "@/memory"
 import { History } from "@/history"
 import { SessionCheckpoint } from "@/session/checkpoint"
+import { Snapshot } from "@/snapshot"
 import { TaskRegistry } from "@/task/registry"
 import { Auth } from "@/auth"
 import { shellWrap } from "./shell-wrap"
@@ -409,6 +410,7 @@ export const defaultLayer = Layer.suspend(() =>
         Memory.defaultLayer,
         History.defaultLayer,
         SessionCheckpoint.defaultLayer,
+        Snapshot.defaultLayer,
         TaskRegistry.defaultLayer,
         Auth.defaultLayer,
       ),

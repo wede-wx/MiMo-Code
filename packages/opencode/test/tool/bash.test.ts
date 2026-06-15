@@ -1,3 +1,4 @@
+import { $ } from "bun"
 import { describe, expect, test } from "bun:test"
 import { Effect, Layer, ManagedRuntime } from "effect"
 import os from "os"
@@ -14,6 +15,8 @@ import { SessionID, MessageID } from "../../src/session/schema"
 import * as CrossSpawnSpawner from "../../src/effect/cross-spawn-spawner"
 import { AppFileSystem } from "@mimo-ai/shared/filesystem"
 import { Plugin } from "../../src/plugin"
+import { Config } from "../../src/config"
+import { Snapshot } from "../../src/snapshot"
 
 const runtime = ManagedRuntime.make(
   Layer.mergeAll(
@@ -22,6 +25,8 @@ const runtime = ManagedRuntime.make(
     Plugin.defaultLayer,
     Truncate.defaultLayer,
     Agent.defaultLayer,
+    Config.defaultLayer,
+    Snapshot.defaultLayer,
   ),
 )
 
@@ -78,6 +83,13 @@ const fill = (mode: "lines" | "bytes", n: number) => {
   const text = `${bin} -e ${evalarg(code)} ${n}`
   if (PS.has(sh())) return `& ${text}`
   return text
+}
+const shellSquote = (text: string) => `'${text.replaceAll("'", "'\\''")}'`
+const psquote = (text: string) => `'${text.replaceAll("'", "''")}'`
+const writeFile = (filepath: string, content: string) => {
+  if (PS.has(sh())) return `Set-Content -LiteralPath ${psquote(filepath)} -Value ${psquote(content)} -NoNewline`
+  if (sh() === "cmd") return `> ${quote(filepath)} echo ${content}`
+  return `printf %s ${shellSquote(content)} > ${shellSquote(filepath.replaceAll("\\", "/"))}`
 }
 const glob = (p: string) =>
   process.platform === "win32" ? Filesystem.normalizePathPattern(p) : p.replaceAll("\\", "/")
@@ -150,6 +162,81 @@ describe("tool.bash", () => {
         )
         expect(result.metadata.exit).toBe(0)
         expect(result.metadata.output).toContain("test")
+      },
+    })
+  })
+})
+
+describe("tool.bash side-effect metadata", () => {
+  test("records worktree file diffs for bash file writes", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const bash = await initBash()
+        const filepath = path.join(tmp.path, "side-effect.txt")
+        const result = await Effect.runPromise(
+          bash.execute(
+            {
+              command: writeFile(filepath, "after"),
+              description: "Write side effect file",
+            },
+            ctx,
+          ),
+        )
+
+        const filediffs = result.metadata.filediffs as Snapshot.FileDiff[] | undefined
+        expect(Array.isArray(filediffs)).toBe(true)
+        const filediff = filediffs?.find((item) => path.basename(item.file) === "side-effect.txt")
+        expect(filediff).toBeDefined()
+        expect(filediff!.status).toBe("added")
+        expect(filediff!.patch).toContain("+after")
+        expect(result.metadata.diff).toContain("+after")
+        expect(result.metadata.description).toBe("Write side effect file")
+      },
+    })
+  })
+
+  test("records an empty file diff list for read-only bash commands", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const bash = await initBash()
+        const result = await Effect.runPromise(
+          bash.execute(
+            {
+              command: "echo hello",
+              description: "Echo without file writes",
+            },
+            ctx,
+          ),
+        )
+
+        expect(result.metadata.filediffs).toEqual([])
+        expect(result.metadata.diff).toBe("")
+      },
+    })
+  })
+
+  test("snapshot tracking for bash metadata does not create commits in the worktree git repo", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const before = (await $`git rev-list --count HEAD`.cwd(tmp.path).text()).trim()
+        const bash = await initBash()
+        await Effect.runPromise(
+          bash.execute(
+            {
+              command: writeFile(path.join(tmp.path, "tracked.txt"), "x"),
+              description: "Write tracked side effect",
+            },
+            ctx,
+          ),
+        )
+        const after = (await $`git rev-list --count HEAD`.cwd(tmp.path).text()).trim()
+        expect(after).toBe(before)
       },
     })
   })

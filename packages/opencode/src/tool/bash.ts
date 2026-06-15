@@ -13,6 +13,7 @@ import { AppFileSystem } from "@mimo-ai/shared/filesystem"
 import { fileURLToPath } from "url"
 import { Flag } from "@/flag/flag"
 import { Shell } from "@/shell/shell"
+import { Snapshot } from "@/snapshot"
 
 import { SessionCwd } from "./session-cwd"
 import { BashArity } from "@/permission/arity"
@@ -231,6 +232,13 @@ function preview(text: string) {
 const ERROR_PATTERN = /error|exception|failed|fatal|traceback|panic|exit code/i
 const HEAD_BYTES = Math.floor(Truncate.MAX_BYTES * 0.7)
 const HEAD_LINES = Math.floor(Truncate.MAX_LINES * 0.7)
+const SIDE_EFFECT_BLIND_SPOTS = [
+  "worktree_external_paths",
+  "gitignored_or_large_files",
+  "database_or_home_directory_writes",
+  "background_processes",
+  "network_side_effects",
+] as const
 
 function head(text: string, maxLines: number, maxBytes: number): string {
   const lines = text.split("\n")
@@ -360,6 +368,7 @@ export const BashTool = Tool.define(
     const fs = yield* AppFileSystem.Service
     const trunc = yield* Truncate.Service
     const plugin = yield* Plugin.Service
+    const snapshot = yield* Snapshot.Service
 
     const cygpath = Effect.fn("BashTool.cygpath")(function* (shell: string, text: string) {
       const lines = yield* spawner
@@ -433,6 +442,49 @@ export const BashTool = Tool.define(
       }
     })
 
+    const trackSideEffects = Effect.fn("BashTool.trackSideEffects")(function* () {
+      return yield* snapshot.track().pipe(Effect.catch(() => Effect.succeed(undefined)))
+    })
+
+    const sideEffectMetadata = Effect.fn("BashTool.sideEffectMetadata")(function* (before: string | undefined) {
+      const after = yield* trackSideEffects()
+      if (!before || !after) {
+        return {
+          sideEffectTracking: {
+            status: "unavailable",
+            scope: "worktree",
+            reason: "snapshot unavailable",
+          },
+          sideEffectBlindSpots: SIDE_EFFECT_BLIND_SPOTS,
+        }
+      }
+
+      const filediffs = yield* snapshot.diffFull(before, after).pipe(Effect.catch(() => Effect.succeed(undefined)))
+      if (!filediffs) {
+        return {
+          sideEffectTracking: {
+            status: "unavailable",
+            scope: "worktree",
+            reason: "snapshot diff unavailable",
+          },
+          sideEffectBlindSpots: SIDE_EFFECT_BLIND_SPOTS,
+        }
+      }
+
+      return {
+        diff: filediffs
+          .map((item) => item.patch)
+          .filter(Boolean)
+          .join("\n"),
+        filediffs,
+        sideEffectTracking: {
+          status: "captured",
+          scope: "worktree",
+        },
+        sideEffectBlindSpots: SIDE_EFFECT_BLIND_SPOTS,
+      }
+    })
+
     const run = Effect.fn("BashTool.run")(function* (
       input: {
         shell: string
@@ -458,6 +510,7 @@ export const BashTool = Tool.define(
       let expired = false
       let aborted = false
 
+      const beforeSideEffects = yield* trackSideEffects()
       yield* ctx.metadata({
         metadata: {
           output: "",
@@ -598,6 +651,7 @@ export const BashTool = Tool.define(
             }),
         )
       }
+      const sideEffects = yield* sideEffectMetadata(beforeSideEffects)
 
       return {
         title: input.description,
@@ -607,6 +661,7 @@ export const BashTool = Tool.define(
           description: input.description,
           truncated: cut,
           ...(cut && file ? { outputPath: file } : {}),
+          ...sideEffects,
         },
         output,
       }
@@ -649,6 +704,7 @@ export const BashTool = Tool.define(
               // Interactive mode: hand terminal to user for direct interaction
               if (params.interactive) {
                 const env = yield* shellEnv(ctx, cwd)
+                const beforeSideEffects = yield* trackSideEffects()
                 yield* ctx.metadata({
                   metadata: {
                     output: "(waiting for user interaction...)",
@@ -663,6 +719,7 @@ export const BashTool = Tool.define(
                     description: params.description,
                   }),
                 ).pipe(Effect.orDie)
+                const sideEffects = yield* sideEffectMetadata(beforeSideEffects)
                 return {
                   title: params.description,
                   metadata: {
@@ -670,6 +727,7 @@ export const BashTool = Tool.define(
                     exit: interactiveResult.exitCode,
                     description: params.description,
                     truncated: false,
+                    ...sideEffects,
                   },
                   output:
                     interactiveResult.output ||
