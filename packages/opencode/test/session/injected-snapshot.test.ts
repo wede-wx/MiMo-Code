@@ -2,7 +2,13 @@ import { describe, expect, test } from "bun:test"
 import fs from "fs/promises"
 import path from "path"
 import { Effect } from "effect"
-import { captureInjectedSnapshot, shouldCaptureInjectedSnapshot } from "../../src/session/injected-snapshot"
+import {
+  captureInjectedSnapshot,
+  pickAppealedSnapshotHash,
+  resolveAppealedSnapshotPath,
+  shouldCaptureInjectedSnapshot,
+} from "../../src/session/injected-snapshot"
+import { renderCommandTemplate } from "../../src/session/prompt"
 import { MessageID, SessionID } from "../../src/session/schema"
 import type { ProjectID } from "../../src/project/schema"
 import { tmpdir } from "../fixture/fixture"
@@ -155,5 +161,72 @@ describe("captureInjectedSnapshot", () => {
     await runGatedCapture({ agentID: "explore-1" })
     await runGatedCapture({ parentSessionID: SessionID.descending("ses_parent") })
     expect(await snapshotFiles(memoryRoot)).toHaveLength(0)
+  })
+})
+
+describe("appealed snapshot resolution", () => {
+  test("picks the latest snapshot at or before the audit boundary", () => {
+    const rows = [
+      { message_id: "msg_1", time: 100, hash: "h1" },
+      { message_id: "msg_2", time: 200, hash: "h2" },
+      { message_id: "msg_3", time: 300, hash: "h3" },
+    ]
+
+    expect(pickAppealedSnapshotHash(rows, 200)).toBe("h2")
+    expect(pickAppealedSnapshotHash(rows, 200)).not.toBe("h3")
+    expect(pickAppealedSnapshotHash(rows, 250)).toBe("h2")
+    expect(pickAppealedSnapshotHash(rows, 50)).toBeUndefined()
+    expect(pickAppealedSnapshotHash(rows, 300)).toBe("h3")
+    expect(pickAppealedSnapshotHash([], 300)).toBeUndefined()
+  })
+
+  test("resolves appealed snapshot paths from index.jsonl and skips bad lines", async () => {
+    await using tmp = await tmpdir()
+    const memoryRoot = path.join(tmp.path, "memory")
+    const sessionID = SessionID.descending("ses_snapshot")
+    const index = path.join(memoryRoot, "sessions", sessionID, "injected", "index.jsonl")
+    await fs.mkdir(path.dirname(index), { recursive: true })
+    await Bun.write(
+      index,
+      [
+        JSON.stringify({ message_id: "msg_1", time: 100, hash: "h1" }),
+        "{not json",
+        JSON.stringify({ message_id: "msg_bad", time: 250 }),
+        JSON.stringify({ message_id: "msg_2", time: 200, hash: "h2" }),
+        JSON.stringify({ message_id: "msg_3", time: 300, hash: "h3" }),
+      ].join("\n"),
+    )
+
+    await expect(Effect.runPromise(resolveAppealedSnapshotPath({ memoryRoot, sessionID, boundary: 200 }))).resolves.toBe(
+      path.join(path.dirname(index), "h2.md"),
+    )
+    await expect(Effect.runPromise(resolveAppealedSnapshotPath({ memoryRoot, sessionID, boundary: 50 }))).resolves.toBeUndefined()
+    await expect(Effect.runPromise(resolveAppealedSnapshotPath({ memoryRoot, sessionID, boundary: 300 }))).resolves.toBe(
+      path.join(path.dirname(index), "h3.md"),
+    )
+
+    await Bun.write(index, "")
+    await expect(Effect.runPromise(resolveAppealedSnapshotPath({ memoryRoot, sessionID, boundary: 300 }))).resolves.toBeUndefined()
+    await fs.rm(index)
+    await expect(Effect.runPromise(resolveAppealedSnapshotPath({ memoryRoot, sessionID, boundary: 300 }))).resolves.toBeUndefined()
+  })
+
+  test("renderCommandTemplate replaces appealed snapshot paths without leaving placeholders", () => {
+    expect(
+      renderCommandTemplate({
+        templateCommand: "Appealed snapshot: $APPEALED_SNAPSHOT",
+        arguments: "",
+        sessionID: SessionID.make("ses_snapshot"),
+        appealedSnapshot: "/m/x/h2.md",
+      }),
+    ).toBe("Appealed snapshot: /m/x/h2.md")
+
+    const empty = renderCommandTemplate({
+      templateCommand: "Appealed snapshot: $APPEALED_SNAPSHOT",
+      arguments: "",
+      sessionID: SessionID.make("ses_snapshot"),
+    })
+    expect(empty).toBe("Appealed snapshot: ")
+    expect(empty).not.toContain("$APPEALED_SNAPSHOT")
   })
 })

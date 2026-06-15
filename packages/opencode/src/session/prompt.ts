@@ -105,6 +105,7 @@ export function renderCommandTemplate(input: {
   sessionID: SessionID
   auditSince?: string
   injectedSnapshotIndex?: string
+  appealedSnapshot?: string
 }) {
   const raw = input.arguments.match(argsRegex) ?? []
   const args = raw.map((arg) => arg.replace(quoteTrimRegex, ""))
@@ -124,6 +125,7 @@ export function renderCommandTemplate(input: {
     .replaceAll("$SESSION_ID", input.sessionID)
     .replaceAll("$AUDIT_SINCE", input.auditSince ?? "none")
     .replaceAll("$INJECTED_SNAPSHOT_INDEX", input.injectedSnapshotIndex ?? "")
+    .replaceAll("$APPEALED_SNAPSHOT", input.appealedSnapshot ?? "")
 
   if (placeholders.length === 0 && !usesArgumentsPlaceholder && input.arguments.trim()) {
     return template + "\n\n" + input.arguments
