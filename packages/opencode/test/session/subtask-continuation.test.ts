@@ -3,6 +3,8 @@ import { COMMAND_INTERNAL_SUBAGENT_TYPES, SYSTEM_SPAWNED_AGENT_TYPES } from "../
 import {
   atlasAuditAttemptFromDescription,
   atlasAuditSinceFromDescription,
+  atlasCommandAuditDescription,
+  atlasReauditDescription,
   encodeAtlasAuditAttemptDescription,
   encodeAtlasAuditSince,
   parseOverallVerdict,
@@ -96,6 +98,26 @@ describe("atlas audit rework orchestration helpers", () => {
     expect(atlasAuditSinceFromDescription("audit the current session")).toBeUndefined()
     expect(atlasAuditSinceFromDescription("audit [atlas-audit-attempt:2] [atlas-audit-since:300]")).toBe("300")
     expect(atlasAuditSinceFromDescription(encodeAtlasAuditSince("x", "200"))).toBe("200")
+  })
+
+  test("builds atlas re-audit descriptions with attempt and same-source since markers", () => {
+    const description = atlasReauditDescription("audit the current session", 2, "300")
+
+    expect(description).toContain("[atlas-audit-attempt:2]")
+    expect(description).toContain("[atlas-audit-since:300]")
+    expect(atlasAuditAttemptFromDescription(description)).toBe(2)
+    expect(atlasAuditSinceFromDescription(description)).toBe("300")
+  })
+
+  test("builds manual atlas command descriptions with since only and leaves non-atlas commands unchanged", () => {
+    const atlas = atlasCommandAuditDescription("atlas", "audit the current session", "none")
+
+    expect(atlas).toContain("[atlas-audit-since:none]")
+    expect(atlas).not.toContain("[atlas-audit-attempt:")
+    expect(atlasAuditAttemptFromDescription(atlas)).toBe(0)
+    expect(atlasAuditSinceFromDescription(atlas)).toBe("none")
+    expect(atlasCommandAuditDescription("distill", "distill current session", undefined)).toBe("distill current session")
+    expect(atlasCommandAuditDescription("distill", "distill current session", "400")).toBe("distill current session")
   })
 
   test("registers atlas appeal as system-spawned and command-internal while preserving atlas", () => {

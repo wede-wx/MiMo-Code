@@ -184,6 +184,17 @@ export function atlasAuditSinceFromDescription(description: string) {
   return description.match(ATLAS_AUDIT_SINCE_PATTERN)?.[1]
 }
 
+/** @internal Exported for unit testing atlas re-audit description markers. */
+export function atlasReauditDescription(description: string, attempt: number, auditSince: string) {
+  return encodeAtlasAuditSince(encodeAtlasAuditAttemptDescription(description, attempt), auditSince)
+}
+
+/** @internal Exported for unit testing command-generated atlas audit descriptions. */
+export function atlasCommandAuditDescription(command: string, description: string, auditSince: string | undefined) {
+  if (command !== Command.Default.ATLAS || auditSince === undefined) return description
+  return encodeAtlasAuditSince(description, auditSince)
+}
+
 /** @internal Exported for unit testing atlas re-audit idempotence. */
 export function shouldTriggerAtlasReaudit(input: {
   reworkAttempt: number | undefined
@@ -1301,15 +1312,14 @@ NOTE: At any point in time through this workflow you should feel free to ask the
 
       const cmd = yield* commands.get(Command.Default.ATLAS)
       if (!cmd) return false
+      const auditSinceStr = String((yield* actorRegistry.lastAuditTime(input.sessionID)) ?? "none")
       const templateCommand = yield* Effect.promise(async () => cmd.template)
       const injectedSnapshotIndex = yield* injectedSnapshotIndexFor({ templateCommand, sessionID: input.sessionID })
       const template = renderCommandTemplate({
         templateCommand,
         arguments: "",
         sessionID: input.sessionID,
-        auditSince: templateCommand.includes("$AUDIT_SINCE")
-          ? String((yield* actorRegistry.lastAuditTime(input.sessionID)) ?? "none")
-          : undefined,
+        auditSince: templateCommand.includes("$AUDIT_SINCE") ? auditSinceStr : undefined,
         injectedSnapshotIndex,
       }).trim()
       const templateParts = yield* resolvePromptParts(template)
@@ -1339,7 +1349,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         sessionID: input.sessionID,
         type: "subtask",
         agent: cmd.agent ?? "atlas",
-        description: encodeAtlasAuditAttemptDescription(cmd.description ?? "", attempt),
+        description: atlasReauditDescription(cmd.description ?? "", attempt, auditSinceStr),
         command: Command.Default.ATLAS,
         model: { providerID: taskModel.providerID, modelID: taskModel.modelID },
         prompt: (templateParts.find((part): part is typeof part & { type: "text"; text: string } => part.type === "text"))
@@ -3352,6 +3362,9 @@ NOTE: At any point in time through this workflow you should feel free to ask the
       }
 
       const templateCommand = yield* Effect.promise(async () => cmd.template)
+      const auditSinceStr = input.command === Command.Default.ATLAS
+        ? String((yield* actorRegistry.lastAuditTime(input.sessionID)) ?? "none")
+        : undefined
 
       let template: string
       if (cmd.source === "skill") {
@@ -3362,9 +3375,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           templateCommand,
           arguments: input.arguments,
           sessionID: input.sessionID,
-          auditSince: templateCommand.includes("$AUDIT_SINCE")
-            ? String((yield* actorRegistry.lastAuditTime(input.sessionID)) ?? "none")
-            : undefined,
+          auditSince: templateCommand.includes("$AUDIT_SINCE") ? auditSinceStr : undefined,
           injectedSnapshotIndex,
         })
       }
@@ -3415,7 +3426,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           {
             type: "subtask" as const,
             agent: agent.name,
-            description: cmd.description ?? "",
+            description: atlasCommandAuditDescription(input.command, cmd.description ?? "", auditSinceStr),
             command: input.command,
             model: { providerID: taskModel.providerID, modelID: taskModel.modelID },
             prompt: promptText,
