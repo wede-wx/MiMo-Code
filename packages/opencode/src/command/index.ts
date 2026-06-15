@@ -64,6 +64,7 @@ export const Default = {
   DREAM: "dream",
   DISTILL: "distill",
   ATLAS: "atlas",
+  ATLAS_APPEAL: "atlas-appeal",
   GOAL: "goal",
   DEEP_RESEARCH: "deep-research",
 } as const
@@ -176,6 +177,17 @@ export const layer = Layer.effect(
           return "Audit session $SESSION_ID. Audit ONLY the working agent's actions after epoch-ms boundary $AUDIT_SINCE (a number, or the literal none = no prior audit -> audit the whole session from the start). Injected context snapshot index: $INJECTED_SNAPSHOT_INDEX. Read the trajectory database (read-only) and report what was actually done versus what was claimed."
         },
         hints: ["$SESSION_ID", "$AUDIT_SINCE", "$INJECTED_SNAPSHOT_INDEX"],
+      }
+      commands[Default.ATLAS_APPEAL] = {
+        name: Default.ATLAS_APPEAL,
+        description: "audit a main-agent appeal against trajectory and the appealed injected-context snapshot",
+        agent: "atlas-appeal",
+        source: "command",
+        subtask: true,
+        get template() {
+          return "Audit appeal for session $SESSION_ID after epoch-ms boundary $AUDIT_SINCE. Appeal basis: $APPEAL_BASIS. Appealed injected context snapshot: $APPEALED_SNAPSHOT. Decide only whether this appeal is upheld or rejected."
+        },
+        hints: ["$SESSION_ID", "$AUDIT_SINCE", "$APPEAL_BASIS", "$APPEALED_SNAPSHOT"],
       }
       commands[Default.GOAL] = {
         name: Default.GOAL,

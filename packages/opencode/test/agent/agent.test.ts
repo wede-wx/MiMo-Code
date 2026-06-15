@@ -734,7 +734,7 @@ test("defaultAgent throws when all primary agents are disabled", async () => {
   })
 })
 
-test("bounded computation agents are exactly title, summary, compaction, checkpoint-writer, dream, distill, atlas", async () => {
+test("bounded computation agents are exactly title, summary, compaction, checkpoint-writer, dream, distill, atlas, atlas-appeal", async () => {
   await using tmp = await tmpdir()
   await Instance.provide({
     directory: tmp.path,
@@ -744,7 +744,16 @@ test("bounded computation agents are exactly title, summary, compaction, checkpo
         .filter((a) => a.native === true && a.hidden === true)
         .map((a) => a.name)
         .sort()
-      expect(boundedComputations).toEqual(["atlas", "checkpoint-writer", "compaction", "distill", "dream", "summary", "title"])
+      expect(boundedComputations).toEqual([
+        "atlas",
+        "atlas-appeal",
+        "checkpoint-writer",
+        "compaction",
+        "distill",
+        "dream",
+        "summary",
+        "title",
+      ])
 
       // Spot-check a few durable agents are NOT classified as bounded.
       const build = agents.find((a) => a.name === "build")
@@ -805,6 +814,53 @@ itTool.live("atlas auditor agent is a hidden read-only subagent", () =>
       expect(ids).toContain("history")
       expect(ids).toContain("audit_trajectory")
       expect(ids).not.toContain("bash")
+    }),
+  ),
+)
+
+itTool.live("atlas appeal auditor agent is a hidden read-only subagent", () =>
+  provideTmpdirInstance(() =>
+    Effect.gen(function* () {
+      const agents = yield* Agent.Service
+      const appeal = yield* agents.get("atlas-appeal")
+      expect(appeal).toBeDefined()
+      expect(appeal?.mode).toBe("subagent")
+      expect(appeal?.native).toBe(true)
+      expect(appeal?.hidden).toBe(true)
+      expect(appeal?.isolateInstructions).toBe(true)
+      expect(appeal?.prompt).toContain("APPEAL_VERDICT: UPHELD")
+      expect(appeal?.prompt).toContain("$APPEALED_SNAPSHOT")
+      expect(appeal?.prompt).toContain("韦鲜")
+      expect(appeal?.toolAllowlist).toEqual(["read", "glob", "grep", "history", "audit_trajectory"])
+      expect(appeal?.toolAllowlist).not.toContain("write")
+      expect(appeal?.toolAllowlist).not.toContain("edit")
+      expect(appeal?.toolAllowlist).not.toContain("memory")
+      expect(appeal?.toolAllowlist).not.toContain("bash")
+      expect(Permission.evaluate("read", "any/path", appeal!.permission).action).toBe("allow")
+      expect(Permission.evaluate("glob", "any/path", appeal!.permission).action).toBe("allow")
+      expect(Permission.evaluate("grep", "any/path", appeal!.permission).action).toBe("allow")
+      expect(Permission.evaluate("history", "any/path", appeal!.permission).action).toBe("allow")
+      expect(Permission.evaluate("audit_trajectory", "ses_test", appeal!.permission).action).toBe("allow")
+      expect(Permission.evaluate("write", "any/path", appeal!.permission).action).toBe("deny")
+      expect(Permission.evaluate("edit", "any/path", appeal!.permission).action).toBe("deny")
+      expect(Permission.evaluate("memory", "any/path", appeal!.permission).action).toBe("deny")
+      expect(Permission.disabled(["read", "glob", "grep", "history", "audit_trajectory", "bash"], appeal!.permission).has("bash")).toBe(true)
+
+      const registry = yield* ToolRegistry.Service
+      const tools = yield* registry.tools({
+        providerID: ProviderID.make("test"),
+        modelID: ModelID.make("test-model"),
+        agent: appeal!,
+      })
+      const ids = tools.map((tool) => tool.id)
+      expect(ids).toContain("read")
+      expect(ids).toContain("glob")
+      expect(ids).toContain("grep")
+      expect(ids).toContain("history")
+      expect(ids).toContain("audit_trajectory")
+      expect(ids).not.toContain("bash")
+      expect(ids).not.toContain("write")
+      expect(ids).not.toContain("edit")
     }),
   ),
 )

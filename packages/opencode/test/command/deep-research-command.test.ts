@@ -23,6 +23,10 @@ describe("/atlas command", () => {
     expect(Command.Default.ATLAS).toBe("atlas")
   })
 
+  test("Default has the atlas appeal name", () => {
+    expect(Command.Default.ATLAS_APPEAL).toBe("atlas-appeal")
+  })
+
   test("registers a clean atlas subtask command with the session id variable", async () => {
     await using tmp = await tmpdir()
     await Instance.provide({
@@ -40,6 +44,27 @@ describe("/atlas command", () => {
         expect(command?.template).toContain("$INJECTED_SNAPSHOT_INDEX")
         expect(command?.hints).toContain("$AUDIT_SINCE")
         expect(command?.hints).toContain("$INJECTED_SNAPSHOT_INDEX")
+      },
+    })
+  })
+
+  test("registers a clean atlas appeal subtask command with appeal placeholders left literal", async () => {
+    await using tmp = await tmpdir()
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const command = await Effect.runPromise(
+          Command.Service.use((svc) => svc.get("atlas-appeal")).pipe(Effect.provide(Command.defaultLayer)),
+        )
+        expect(command).toBeDefined()
+        expect(command?.agent).toBe("atlas-appeal")
+        expect(command?.subtask).toBe(true)
+        expect(command?.source).toBe("command")
+        expect(command?.template).toContain("$SESSION_ID")
+        expect(command?.template).toContain("$AUDIT_SINCE")
+        expect(command?.template).toContain("$APPEAL_BASIS")
+        expect(command?.template).toContain("$APPEALED_SNAPSHOT")
+        expect(command?.hints).toEqual(["$SESSION_ID", "$AUDIT_SINCE", "$APPEAL_BASIS", "$APPEALED_SNAPSHOT"])
       },
     })
   })

@@ -13,6 +13,7 @@ import PROMPT_EXPLORE from "./prompt/explore.txt"
 import PROMPT_DREAM from "./prompt/dream.txt"
 import PROMPT_DISTILL from "./prompt/distill.txt"
 import PROMPT_ATLAS from "./prompt/atlas.txt"
+import PROMPT_ATLAS_APPEAL from "./prompt/atlas-appeal.txt"
 import PROMPT_SUMMARY from "./prompt/summary.txt"
 import PROMPT_COMPACTION from "./prompt/compaction.txt"
 import PROMPT_TITLE from "./prompt/title.txt"
@@ -376,6 +377,28 @@ export const layer = Layer.effect(
             hidden: true,
             isolateInstructions: true,
             prompt: PROMPT_ATLAS,
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                "*": "deny",
+                read: "allow",
+                glob: "allow",
+                grep: "allow",
+                history: "allow",
+                audit_trajectory: "allow",
+              }),
+              user,
+            ),
+            toolAllowlist: ["read", "glob", "grep", "history", "audit_trajectory"],
+          },
+          "atlas-appeal": {
+            name: "atlas-appeal",
+            mode: "subagent" as const,
+            options: {},
+            native: true,
+            hidden: true,
+            isolateInstructions: true,
+            prompt: PROMPT_ATLAS_APPEAL,
             permission: Permission.merge(
               defaults,
               Permission.fromConfig({

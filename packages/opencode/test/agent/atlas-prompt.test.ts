@@ -10,3 +10,16 @@ test("atlas overall verdict treats unsupported claims as not passed while leavin
   expect(prompt).not.toContain("reports with UNSUPPORTED or N/A claims but no NOT DONE claims")
   expect(prompt).not.toContain("UNSUPPORTED and N/A are not NOT_DONE")
 })
+
+test("atlas appeal prompt defines strict appeal verdicts and remains read-only", async () => {
+  const prompt = await Bun.file(path.join(import.meta.dir, "../../src/agent/prompt/atlas-appeal.txt")).text()
+
+  expect(prompt).toContain("APPEAL_VERDICT: UPHELD")
+  expect(prompt).toContain("APPEAL_VERDICT: REJECTED")
+  expect(prompt).toContain("$APPEALED_SNAPSHOT")
+  expect(prompt).toContain("do NOT uphold")
+  expect(prompt).toContain("Never uphold to be lenient")
+  expect(prompt).toContain("韦鲜")
+  expect(prompt).toContain("general assistant")
+  expect(prompt).toContain("Read-only")
+})

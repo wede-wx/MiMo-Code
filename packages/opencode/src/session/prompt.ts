@@ -140,6 +140,7 @@ function injectedSnapshotIndexFor(input: { templateCommand: string; sessionID: S
 }
 
 type OverallVerdict = "done" | "not_done" | "unreadable"
+type AppealVerdict = "upheld" | "rejected" | "unreadable"
 type AtlasContinuationDecision =
   | { kind: "legacy"; text: string; reworkAttempt?: undefined }
   | { kind: "done"; text: string; reworkAttempt?: undefined }
@@ -250,6 +251,27 @@ export function parseOverallVerdict(output: string): OverallVerdict {
   const match = line?.match(/^[ \t]*OVERALL_VERDICT:[ \t]*(DONE|NOT_DONE)[ \t]*$/i)
   if (!match) return "unreadable"
   return match[1].toUpperCase() === "DONE" ? "done" : "not_done"
+}
+
+/** @internal Exported for unit testing atlas appeal parsing. */
+export function parseAppeal(output: string) {
+  const line = output
+    .split(/\r?\n/)
+    .filter((item) => /^[ \t]*APPEAL:/i.test(item))
+    .at(-1)
+  const basis = line?.match(/^[ \t]*APPEAL:[ \t]*(.+?)[ \t]*$/i)?.[1].trim()
+  return basis ? basis : undefined
+}
+
+/** @internal Exported for unit testing atlas appeal verdict parsing. */
+export function parseAppealVerdict(output: string): AppealVerdict {
+  const line = output
+    .split(/\r?\n/)
+    .filter((item) => /^[ \t]*APPEAL_VERDICT:/i.test(item))
+    .at(-1)
+  const match = line?.match(/^[ \t]*APPEAL_VERDICT:[ \t]*(UPHELD|REJECTED)[ \t]*$/i)
+  if (!match) return "unreadable"
+  return match[1].toUpperCase() === "UPHELD" ? "upheld" : "rejected"
 }
 
 function auditLedgerBlock(input: {
