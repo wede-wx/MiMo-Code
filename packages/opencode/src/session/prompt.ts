@@ -402,6 +402,64 @@ export const writeAuditLedgerEntry = Effect.fn("SessionPrompt.writeAuditLedgerEn
  * TODO: lift to mimocode.json config (e.g. session.maxGoalReact).
  */
 const MAX_GOAL_REACT = 12
+const GOAL_JUDGE_MAX_ATTEMPTS = 3
+
+type GoalJudgeEvaluation =
+  | { type: "verdict"; verdict: Goal.Verdict; attempts: number }
+  | { type: "unavailable"; reason: string; attempts: number }
+
+function goalJudgeErrorReason(error: unknown) {
+  if (error instanceof Error && error.message) return error.message
+  return String(error)
+}
+
+function goalJudgeRetrySleep(attempt: number) {
+  const delay = 500 * 2 ** (attempt - 1) + Math.floor(Math.random() * 100)
+  return Effect.sleep(delay)
+}
+
+/** @internal Exported for unit testing goal judge retry/failure handling. */
+export const evaluateGoalJudgeWithRetry = Effect.fn("SessionPrompt.evaluateGoalJudgeWithRetry")(function* (input: {
+  evaluate: () => Effect.Effect<Goal.Verdict, unknown>
+  sleep?: (attempt: number) => Effect.Effect<void>
+}) {
+  const sleep = input.sleep ?? goalJudgeRetrySleep
+  const attempt = (count: number): Effect.Effect<GoalJudgeEvaluation> =>
+    input.evaluate().pipe(
+      Effect.map((verdict) => ({ type: "verdict", verdict, attempts: count }) as const),
+      Effect.catch((error) => {
+        if (count >= GOAL_JUDGE_MAX_ATTEMPTS)
+          return Effect.succeed({
+            type: "unavailable",
+            reason: goalJudgeErrorReason(error),
+            attempts: count,
+          } as const)
+        return sleep(count).pipe(Effect.andThen(() => attempt(count + 1)))
+      }),
+    )
+  return yield* attempt(1)
+})
+
+/** @internal Exported for unit testing goal judge fail-closed continuation. */
+export function goalJudgeUnavailableContinuation(input: {
+  condition: string
+  reason: string
+  attempts: number
+}) {
+  return {
+    allowStop: false,
+    clearGoal: false,
+    continueLoop: false,
+    text: [
+      "<system-reminder>",
+      `The goal judge is unavailable after ${input.attempts} attempts while checking: "${input.condition}".`,
+      `Latest judge error: ${input.reason}`,
+      "Automatic goal verification is paused and this has been handed to the user for manual review.",
+      "The goal remains active; do not treat this as completion or clear the goal automatically.",
+      "</system-reminder>",
+    ].join("\n"),
+  }
+}
 
 /**
  * Number of consecutive finished assistant steps with an identical action
@@ -2335,8 +2393,9 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         // the active goal is satisfied. Not satisfied → inject the judge's
         // reason as a synthetic user turn and signal the caller to keep working
         // (return true). This is the main-loop analogue of actor.preStop ReAct
-        // re-entry, which only fires for spawned actors. fail-open on any judge
-        // error so a flaky judge can never trap the user.
+        // re-entry, which only fires for spawned actors. Judge transport/parse
+        // failures are retried and then fail closed: pause the automatic loop
+        // without clearing the active goal.
         const goalGate = Effect.fn("SessionPrompt.goalGate")(function* (lastUser: MessageV2.User) {
           if ((agentID ?? "main") !== "main") return false
           const active = yield* goal.get(sessionID)
@@ -2350,22 +2409,60 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           // Anchor the verdict to the assistant turn the judge just evaluated, so
           // the TUI can render a per-turn marker the user can trace back to.
           const judgedMessageID = transcriptMsgs.findLast((m) => m.info.role === "assistant")?.info.id
-          const verdict = yield* goal
-            .evaluate({
+          const judge = yield* evaluateGoalJudgeWithRetry({
+            evaluate: () =>
+              goal.evaluate({
+                condition: active.condition,
+                msgs: transcriptMsgs,
+                model: lastUser.model,
+              }),
+          })
+
+          if (judge.type === "unavailable") {
+            const continuation = goalJudgeUnavailableContinuation({
               condition: active.condition,
-              msgs: transcriptMsgs,
-              model: lastUser.model,
+              reason: judge.reason,
+              attempts: judge.attempts,
             })
-            .pipe(
-              Effect.catch((err) =>
-                Effect.gen(function* () {
-                  yield* slog.warn("goal judge failed; allowing stop", { error: String(err) })
-                  return { ok: true, reason: "judge error", judgeFailed: true } as Goal.Verdict & {
-                    judgeFailed: true
-                  }
-                }),
-              ),
-            )
+            yield* slog.warn("goal judge failed after retries; pausing automatic loop", {
+              sessionID,
+              error: judge.reason,
+              attempts: judge.attempts,
+            })
+            yield* bus.publish(Goal.Event.Updated, {
+              sessionID,
+              goal: { condition: active.condition },
+              lastVerdict: {
+                ok: false,
+                reason: `Goal judge unavailable after ${judge.attempts} attempts: ${judge.reason}`,
+                attempt: active.react,
+                messageID: judgedMessageID,
+                error: true,
+              },
+            })
+            const reentry = yield* sessions.updateMessage({
+              id: MessageID.ascending(),
+              role: "user" as const,
+              sessionID,
+              agentID: lastUser.agentID,
+              agent: lastUser.agent,
+              model: lastUser.model,
+              tools: lastUser.tools,
+              format: lastUser.format,
+              time: { created: Date.now() },
+            })
+            yield* sessions.updatePart({
+              id: PartID.ascending(),
+              messageID: reentry.id,
+              sessionID,
+              type: "text",
+              synthetic: true,
+              text: continuation.text,
+            } satisfies MessageV2.TextPart)
+            return continuation.continueLoop
+          }
+
+          const verdict = judge.verdict
 
           if (verdict.ok || verdict.impossible) {
             yield* slog.info("goal satisfied; allowing stop", {
@@ -2382,7 +2479,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                 ...verdict,
                 attempt: active.react,
                 messageID: judgedMessageID,
-                error: "judgeFailed" in verdict ? true : undefined,
               },
             })
             yield* goal.clear(sessionID)
