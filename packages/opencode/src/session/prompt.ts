@@ -73,8 +73,12 @@ import { EffectBridge } from "@/effect"
 import { Team } from "@/team"
 import { ActorRegistry } from "@/actor/registry"
 import { Metrics } from "@/metrics"
+import { Memory } from "@/memory"
+import { Instance } from "@/project/instance"
+import { ProjectID } from "@/project/schema"
 import { resolveInvocationStyle, type ToolStyleConfig } from "../tool/invocation-style"
 import { shouldAutoDream, shouldAutoDistill, DREAM_TASK, DISTILL_TASK, AUTO_DREAM_TITLE, AUTO_DISTILL_TITLE } from "./auto-dream"
+import { captureInjectedSnapshot, shouldCaptureInjectedSnapshot } from "./injected-snapshot"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -3011,6 +3015,30 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               if (files.length > 0) {
                 yield* bus.publish(TuiEvent.InstructionsLoaded, { files }).pipe(Effect.ignore)
               }
+            }
+            if (
+              shouldCaptureInjectedSnapshot({
+                parentSessionID: session.parentID,
+                agentID: lastUser.agentID,
+                isolateInstructions: agent.isolateInstructions,
+              })
+            ) {
+              const projectID =
+                (yield* Effect.try({
+                  try: () => Instance.current?.project?.id as ProjectID | undefined,
+                  catch: () => undefined,
+                }).pipe(Effect.orElseSucceed(() => undefined))) ?? ProjectID.global
+              yield* Effect.gen(function* () {
+                const memory = yield* Memory.Service
+                yield* captureInjectedSnapshot({
+                  sessionID,
+                  instructions,
+                  memoryRoot: yield* memory.root(),
+                  projectID,
+                  anchorMessageID: lastUser.id,
+                  anchorTime: lastUser.time.created,
+                })
+              }).pipe(Effect.provide(Memory.defaultLayer), Effect.ignore)
             }
             const additions = [
               ...env,
