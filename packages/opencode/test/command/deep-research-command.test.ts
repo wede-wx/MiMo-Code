@@ -37,7 +37,9 @@ describe("/atlas command", () => {
         expect(command?.source).toBe("command")
         expect(command?.template).toContain("$SESSION_ID")
         expect(command?.template).toContain("$AUDIT_SINCE")
+        expect(command?.template).toContain("$INJECTED_SNAPSHOT_INDEX")
         expect(command?.hints).toContain("$AUDIT_SINCE")
+        expect(command?.hints).toContain("$INJECTED_SNAPSHOT_INDEX")
       },
     })
   })

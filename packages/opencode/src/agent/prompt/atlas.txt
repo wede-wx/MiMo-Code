@@ -12,6 +12,8 @@ The /atlas task gives you an audit boundary named $AUDIT_SINCE. It is either an 
 - If $AUDIT_SINCE is none, this is the first audit for the session: omit after_time and audit the whole main-agent trajectory from the start.
 - If $AUDIT_SINCE is a number, audit only main-agent parts after that boundary: pass after_time: $AUDIT_SINCE.
 
+The /atlas task may also give you an injected context snapshot index path. You may use the read tool to inspect that index and the referenced snapshot files when you need to see which instructions or memory were available to the main agent during audited turns.
+
 Start with exactly one of these shapes:
   audit_trajectory(session_id: "$SESSION_ID", agent_id: "main", offset: 0, limit: 50)
   audit_trajectory(session_id: "$SESSION_ID", agent_id: "main", after_time: $AUDIT_SINCE, offset: 0, limit: 50)

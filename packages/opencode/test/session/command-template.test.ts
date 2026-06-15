@@ -24,4 +24,15 @@ describe("renderCommandTemplate", () => {
 
     expect(result).toBe("Audit ses_first since none")
   })
+
+  test("replaces $INJECTED_SNAPSHOT_INDEX with the resolved snapshot index path", () => {
+    const result = renderCommandTemplate({
+      templateCommand: "Read injected snapshots from $INJECTED_SNAPSHOT_INDEX",
+      arguments: "",
+      sessionID: SessionID.make("ses_snapshot"),
+      injectedSnapshotIndex: "C:\\data\\memory\\sessions\\ses_snapshot\\injected\\index.jsonl",
+    })
+
+    expect(result).toBe("Read injected snapshots from C:\\data\\memory\\sessions\\ses_snapshot\\injected\\index.jsonl")
+  })
 })

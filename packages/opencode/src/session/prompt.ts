@@ -78,7 +78,7 @@ import { Instance } from "@/project/instance"
 import { ProjectID } from "@/project/schema"
 import { resolveInvocationStyle, type ToolStyleConfig } from "../tool/invocation-style"
 import { shouldAutoDream, shouldAutoDistill, DREAM_TASK, DISTILL_TASK, AUTO_DREAM_TITLE, AUTO_DISTILL_TITLE } from "./auto-dream"
-import { captureInjectedSnapshot, shouldCaptureInjectedSnapshot } from "./injected-snapshot"
+import { captureInjectedSnapshot, injectedSnapshotIndexPath, shouldCaptureInjectedSnapshot } from "./injected-snapshot"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -104,6 +104,7 @@ export function renderCommandTemplate(input: {
   arguments: string
   sessionID: SessionID
   auditSince?: string
+  injectedSnapshotIndex?: string
 }) {
   const raw = input.arguments.match(argsRegex) ?? []
   const args = raw.map((arg) => arg.replace(quoteTrimRegex, ""))
@@ -122,11 +123,20 @@ export function renderCommandTemplate(input: {
     .replaceAll("$ARGUMENTS", input.arguments)
     .replaceAll("$SESSION_ID", input.sessionID)
     .replaceAll("$AUDIT_SINCE", input.auditSince ?? "none")
+    .replaceAll("$INJECTED_SNAPSHOT_INDEX", input.injectedSnapshotIndex ?? "")
 
   if (placeholders.length === 0 && !usesArgumentsPlaceholder && input.arguments.trim()) {
     return template + "\n\n" + input.arguments
   }
   return template
+}
+
+function injectedSnapshotIndexFor(input: { templateCommand: string; sessionID: SessionID }) {
+  if (!input.templateCommand.includes("$INJECTED_SNAPSHOT_INDEX")) return Effect.succeed(undefined)
+  return Effect.gen(function* () {
+    const memory = yield* Memory.Service
+    return injectedSnapshotIndexPath(yield* memory.root(), input.sessionID)
+  }).pipe(Effect.provide(Memory.defaultLayer), Effect.orElseSucceed(() => undefined))
 }
 
 type OverallVerdict = "done" | "not_done" | "unreadable"
@@ -1255,6 +1265,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
       const cmd = yield* commands.get(Command.Default.ATLAS)
       if (!cmd) return false
       const templateCommand = yield* Effect.promise(async () => cmd.template)
+      const injectedSnapshotIndex = yield* injectedSnapshotIndexFor({ templateCommand, sessionID: input.sessionID })
       const template = renderCommandTemplate({
         templateCommand,
         arguments: "",
@@ -1262,6 +1273,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         auditSince: templateCommand.includes("$AUDIT_SINCE")
           ? String((yield* actorRegistry.lastAuditTime(input.sessionID)) ?? "none")
           : undefined,
+        injectedSnapshotIndex,
       }).trim()
       const templateParts = yield* resolvePromptParts(template)
       const taskModel = yield* Effect.gen(function* () {
@@ -3308,6 +3320,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
       if (cmd.source === "skill") {
         template = input.arguments
       } else {
+        const injectedSnapshotIndex = yield* injectedSnapshotIndexFor({ templateCommand, sessionID: input.sessionID })
         template = renderCommandTemplate({
           templateCommand,
           arguments: input.arguments,
@@ -3315,6 +3328,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           auditSince: templateCommand.includes("$AUDIT_SINCE")
             ? String((yield* actorRegistry.lastAuditTime(input.sessionID)) ?? "none")
             : undefined,
+          injectedSnapshotIndex,
         })
       }
 

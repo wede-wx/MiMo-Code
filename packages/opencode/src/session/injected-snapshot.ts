@@ -48,6 +48,10 @@ function snapshotBody(sources: SnapshotSource[]) {
   return sources.map((source) => source.content).join("\n\n---\n\n")
 }
 
+export function injectedSnapshotIndexPath(memoryRoot: string, sessionID: SessionID) {
+  return path.join(memoryRoot, "sessions", sessionID, "injected", "index.jsonl")
+}
+
 function frontmatter(input: {
   sessionID: SessionID
   hash: string
@@ -89,7 +93,8 @@ export const captureInjectedSnapshot = Effect.fn("InjectedSnapshot.capture")(fun
 
   const body = snapshotBody(sources)
   const hash = createHash("sha256").update(body).digest("hex")
-  const dir = path.join(input.memoryRoot, "sessions", input.sessionID, "injected")
+  const index = injectedSnapshotIndexPath(input.memoryRoot, input.sessionID)
+  const dir = path.dirname(index)
   const file = path.join(dir, `${hash}.md`)
   yield* Effect.promise(() => mkdir(dir, { recursive: true }))
   if (!(yield* Effect.promise(() => Bun.file(file).exists()))) {
@@ -108,7 +113,7 @@ export const captureInjectedSnapshot = Effect.fn("InjectedSnapshot.capture")(fun
   }
   yield* Effect.promise(() =>
     appendFile(
-      path.join(dir, "index.jsonl"),
+      index,
       JSON.stringify({
         message_id: input.anchorMessageID,
         time: input.anchorTime,

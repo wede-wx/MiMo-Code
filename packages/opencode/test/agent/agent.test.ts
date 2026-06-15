@@ -768,6 +768,8 @@ itTool.live("atlas auditor agent is a hidden read-only subagent", () =>
       expect(atlas?.native).toBe(true)
       expect(atlas?.hidden).toBe(true)
       expect(atlas?.isolateInstructions).toBe(true)
+      expect(atlas?.prompt).toContain("injected context snapshot index path")
+      expect(atlas?.prompt).toContain("read tool")
       expect(atlas?.toolAllowlist).toEqual(["read", "glob", "grep", "history", "audit_trajectory"])
       expect(atlas?.toolAllowlist).not.toContain("write")
       expect(atlas?.toolAllowlist).not.toContain("edit")
