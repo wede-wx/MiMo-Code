@@ -72,9 +72,9 @@ The report must end with exactly one of these final lines:
   OVERALL_VERDICT: NOT_DONE
 
 Choose the overall verdict by this rule:
-- If any CLAIM has VERDICT: NOT DONE, write OVERALL_VERDICT: NOT_DONE.
-- Otherwise write OVERALL_VERDICT: DONE. This includes reports where all claims are DONE, and reports with UNSUPPORTED or N/A claims but no NOT DONE claims.
-- UNSUPPORTED and N/A are not NOT_DONE in this version. Only an actual NOT DONE claim makes the overall verdict NOT_DONE.
+- If any CLAIM has VERDICT: NOT DONE or UNSUPPORTED, write OVERALL_VERDICT: NOT_DONE.
+- UNSUPPORTED means the trajectory lacks support for an action claim; it is not a direct contradiction, but it is not passed and should trigger rework so the working agent can provide missing proof or appeal with evidence from injected context in a later pass.
+- Otherwise write OVERALL_VERDICT: DONE. This includes reports where all claims are DONE, and reports with N/A claims but no NOT DONE or UNSUPPORTED claims. N/A remains outside auditable scope and does not trigger OVERALL_VERDICT: NOT_DONE.
 
 The format is strict: fixed prefix OVERALL_VERDICT:, one token (DONE or NOT_DONE), uppercase with underscore, final line only, no markdown, no trailing words.
 
