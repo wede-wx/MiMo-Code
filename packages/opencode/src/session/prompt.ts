@@ -300,6 +300,24 @@ export function subtaskContinuationDecision(
   }
 }
 
+/** @internal Exported for unit testing atlas appeal verdict routing. */
+export function subtaskAppealDecision(
+  appealVerdict: AppealVerdict = "unreadable",
+  auditAttempt = 0,
+): AtlasContinuationDecision {
+  if (appealVerdict === "upheld")
+    return {
+      kind: "done",
+      text: "The appeal was UPHELD. The audit's NOT_DONE verdict is overturned; treat the task as passed. Do not trigger another audit, do not rework, and do not restate or summarize the appeal verdict.",
+    }
+  if (appealVerdict === "unreadable")
+    return {
+      kind: "unreadable",
+      text: "The appeal verdict could not be read in machine-readable form. The appeal has been recorded and handed to the user for manual review. Do not treat the task as passed, do not trigger another audit, and do not restate or summarize the appeal verdict.",
+    }
+  return subtaskContinuationDecision("atlas", "not_done", auditAttempt)
+}
+
 /** @internal Exported for unit testing command-subtask continuation wording. */
 export function subtaskContinuationPrompt(
   command: string | undefined,
@@ -1293,7 +1311,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         } satisfies MessageV2.ToolPart)
       }
 
-      if (result && task.command === "atlas") {
+      if (result && (task.command === "atlas" || task.command === "atlas-appeal")) {
         yield* writeAuditLedgerEntry({
           fsys,
           projectRoot: ctx.worktree,
@@ -1305,11 +1323,14 @@ NOTE: At any point in time through this workflow you should feel free to ask the
 
       if (!task.command) return
 
-      const continuationDecision = subtaskContinuationDecision(
-        task.command,
-        task.command === "atlas" && result ? parseOverallVerdict(result.output) : undefined,
-        task.command === "atlas" ? atlasAuditAttemptFromDescription(task.description) : 0,
-      )
+      const continuationDecision =
+        task.command === "atlas-appeal" && result
+          ? subtaskAppealDecision(parseAppealVerdict(result.output), atlasAuditAttemptFromDescription(task.description))
+          : subtaskContinuationDecision(
+              task.command,
+              task.command === "atlas" && result ? parseOverallVerdict(result.output) : undefined,
+              task.command === "atlas" ? atlasAuditAttemptFromDescription(task.description) : 0,
+            )
       const summaryUserMsg: MessageV2.User = {
         id: MessageID.ascending(),
         sessionID,

@@ -12,6 +12,7 @@ import {
   encodeAtlasAuditSince,
   parseOverallVerdict,
   shouldTriggerAtlasReaudit,
+  subtaskAppealDecision,
   subtaskContinuationDecision,
   subtaskContinuationPrompt,
 } from "../../src/session/prompt"
@@ -77,6 +78,20 @@ describe("subtaskContinuationPrompt", () => {
 })
 
 describe("atlas audit rework orchestration helpers", () => {
+  test("maps atlas appeal verdicts into the audit continuation state machine", () => {
+    expect(subtaskAppealDecision("upheld", 1).kind).toBe("done")
+
+    expect(subtaskAppealDecision("rejected", 0)).toMatchObject({ kind: "rework", reworkAttempt: 1 })
+    expect(subtaskAppealDecision("rejected", 2)).toMatchObject({ kind: "rework", reworkAttempt: 3 })
+    expect(subtaskAppealDecision("rejected", 3).kind).toBe("give_up")
+
+    expect(subtaskAppealDecision("unreadable", 1).kind).toBe("unreadable")
+    expect(subtaskAppealDecision("unreadable", 1).kind).not.toBe("done")
+    expect(subtaskAppealDecision().kind).toBe("unreadable")
+    expect(subtaskAppealDecision().kind).not.toBe("done")
+    expect(subtaskAppealDecision("rejected", 2)).toEqual(subtaskContinuationDecision("atlas", "not_done", 2))
+  })
+
   test("encodes and decodes atlas audit attempt from subtask description", () => {
     const description = encodeAtlasAuditAttemptDescription("audit the current session", 2)
 
