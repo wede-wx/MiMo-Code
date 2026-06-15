@@ -3047,8 +3047,8 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   instructions,
                   memoryRoot: yield* memory.root(),
                   projectID,
-                  anchorMessageID: lastUser.id,
-                  anchorTime: lastUser.time.created,
+                  anchorMessageID: msg.id,
+                  anchorTime: msg.time.created,
                 })
               }).pipe(Effect.provide(Memory.defaultLayer), Effect.ignore)
             }

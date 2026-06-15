@@ -76,6 +76,20 @@ describe("captureInjectedSnapshot", () => {
     const lines = await indexLines(memoryRoot)
     expect(lines).toHaveLength(2)
     expect(JSON.parse(lines[0]).hash).toBe(JSON.parse(lines[1]).hash)
+    expect(JSON.parse(lines[0])).toMatchObject({ message_id: "msg_one", time: 111 })
+    expect(JSON.parse(lines[1])).toMatchObject({ message_id: "msg_two", time: 222 })
+    expect(JSON.parse(lines[0]).time).not.toBe(JSON.parse(lines[1]).time)
+    expect(JSON.parse(lines[0]).message_id).not.toBe(JSON.parse(lines[1]).message_id)
+  })
+
+  test("prompt snapshot capture is anchored to the current assistant step", async () => {
+    const prompt = await Bun.file(path.join(import.meta.dir, "../../src/session/prompt.ts")).text()
+    const call = prompt.match(/captureInjectedSnapshot\(\{[\s\S]*?anchorTime:[\s\S]*?\}\)/)?.[0] ?? ""
+
+    expect(call).toContain("anchorMessageID: msg.id")
+    expect(call).toContain("anchorTime: msg.time.created")
+    expect(call).not.toContain("anchorMessageID: lastUser.id")
+    expect(call).not.toContain("anchorTime: lastUser.time.created")
   })
 
   test("stores a new content-addressed snapshot when MEMORY.md changes", async () => {
