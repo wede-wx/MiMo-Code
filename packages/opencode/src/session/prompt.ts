@@ -78,7 +78,12 @@ import { Instance } from "@/project/instance"
 import { ProjectID } from "@/project/schema"
 import { resolveInvocationStyle, type ToolStyleConfig } from "../tool/invocation-style"
 import { shouldAutoDream, shouldAutoDistill, DREAM_TASK, DISTILL_TASK, AUTO_DREAM_TITLE, AUTO_DISTILL_TITLE } from "./auto-dream"
-import { captureInjectedSnapshot, injectedSnapshotIndexPath, shouldCaptureInjectedSnapshot } from "./injected-snapshot"
+import {
+  captureInjectedSnapshot,
+  injectedSnapshotIndexPath,
+  resolveAppealedSnapshotPath,
+  shouldCaptureInjectedSnapshot,
+} from "./injected-snapshot"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -98,6 +103,13 @@ export function recallHintLines(toolCfg: ToolStyleConfig | undefined): string[] 
   return [`- memory({ operation: "search", query: "<keyword>" })`, taskHint, actorHint]
 }
 
+const APPEAL_BASIS_MAX_LENGTH = 500
+
+function sanitizeBasis(basis: string | undefined) {
+  if (!basis) return ""
+  return basis.replace(/\s+/g, " ").trim().slice(0, APPEAL_BASIS_MAX_LENGTH)
+}
+
 /** @internal Exported for unit testing command variable rendering. */
 export function renderCommandTemplate(input: {
   templateCommand: string
@@ -106,6 +118,7 @@ export function renderCommandTemplate(input: {
   auditSince?: string
   injectedSnapshotIndex?: string
   appealedSnapshot?: string
+  appealBasis?: string
 }) {
   const raw = input.arguments.match(argsRegex) ?? []
   const args = raw.map((arg) => arg.replace(quoteTrimRegex, ""))
@@ -126,6 +139,7 @@ export function renderCommandTemplate(input: {
     .replaceAll("$AUDIT_SINCE", input.auditSince ?? "none")
     .replaceAll("$INJECTED_SNAPSHOT_INDEX", input.injectedSnapshotIndex ?? "")
     .replaceAll("$APPEALED_SNAPSHOT", input.appealedSnapshot ?? "")
+    .replaceAll("$APPEAL_BASIS", sanitizeBasis(input.appealBasis))
 
   if (placeholders.length === 0 && !usesArgumentsPlaceholder && input.arguments.trim()) {
     return template + "\n\n" + input.arguments
@@ -138,6 +152,22 @@ function injectedSnapshotIndexFor(input: { templateCommand: string; sessionID: S
   return Effect.gen(function* () {
     const memory = yield* Memory.Service
     return injectedSnapshotIndexPath(yield* memory.root(), input.sessionID)
+  }).pipe(Effect.provide(Memory.defaultLayer), Effect.orElseSucceed(() => undefined))
+}
+
+/** @internal Exported for unit testing appealed snapshot boundary parsing. */
+export function appealBoundary(auditSince: string | undefined) {
+  if (!auditSince) return undefined
+  const boundary = Number(auditSince)
+  return Number.isFinite(boundary) ? boundary : undefined
+}
+
+function appealedSnapshotFor(input: { sessionID: SessionID; auditSince: string | undefined }) {
+  const boundary = appealBoundary(input.auditSince)
+  if (boundary === undefined) return Effect.succeed(undefined)
+  return Effect.gen(function* () {
+    const memory = yield* Memory.Service
+    return yield* resolveAppealedSnapshotPath({ memoryRoot: yield* memory.root(), sessionID: input.sessionID, boundary })
   }).pipe(Effect.provide(Memory.defaultLayer), Effect.orElseSucceed(() => undefined))
 }
 
