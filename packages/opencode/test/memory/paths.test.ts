@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { parsePath, buildPath, resolveProjectId } from "../../src/memory/paths"
+import { parsePath, buildPath, parseCcPath, resolveProjectId } from "../../src/memory/paths"
+
+function winPath(...parts: string[]) {
+  return parts.join("\\")
+}
 
 describe("parsePath", () => {
   test("global scope, key is filename", () => {
@@ -147,6 +151,61 @@ describe("parsePath", () => {
 
   test("legacy <root>/tasks/<id>/ path no longer matches (tasks dropped from Scope)", () => {
     expect(parsePath("/data/memory/tasks/T1/progress.md")).toBeNull()
+  })
+
+  test("Windows separators parse global memory paths", () => {
+    expect(parsePath(winPath("C:", "data", "memory", "global", "MEMORY.md"))).toEqual({
+      scope: "global",
+      scope_id: "",
+      type: "memory",
+      key: "MEMORY",
+    })
+  })
+
+  test("Windows separators parse project memory paths", () => {
+    expect(
+      parsePath(
+        winPath("C:", "data", "memory", "projects", "proj_123", "tasks", "T1", "progress.md"),
+      ),
+    ).toEqual({
+      scope: "projects",
+      scope_id: "proj_123",
+      type: "progress",
+      key: "tasks/T1/progress",
+    })
+  })
+
+  test("Windows separators parse paths emitted by buildPath", () => {
+    expect(
+      parsePath(
+        buildPath({
+          root: winPath("C:", "data", "memory"),
+          scope: "projects",
+          scope_id: "proj_123",
+          key: "MEMORY",
+        }),
+      ),
+    ).toEqual({
+      scope: "projects",
+      scope_id: "proj_123",
+      type: "memory",
+      key: "MEMORY",
+    })
+  })
+})
+
+describe("parseCcPath", () => {
+  test("Windows separators parse CC memory paths", () => {
+    expect(
+      parseCcPath(
+        winPath("C:", "Users", "me", ".claude", "projects", "-proj", "memory", "sub", "file.md"),
+      ),
+    ).toEqual({
+      scope: "cc",
+      scope_id: "-proj",
+      type: "free",
+      key: "sub/file",
+    })
   })
 })
 
