@@ -39,14 +39,42 @@ The goal is simple: make completion claims auditable.
 
 ## Quick Start
 
+### Prepare Your Environment (First Time Only)
+
+Install these two tools first:
+
+1. **Git** - download and install it from [git-scm.com](https://git-scm.com/).
+2. **Bun** - the runtime used by this project. Install it from [bun.sh](https://bun.sh/). On Windows, run this in PowerShell:
+
+```powershell
+powershell -c "irm bun.sh/install.ps1 | iex"
+```
+
+After installing Git and Bun, close your terminal and open a new one so the commands are available.
+
+### Download and Start
+
 Install this fork from source. Do not use the upstream one-line installer or upstream npm global package if you want this fork; those install Xiaomi's official package, not MiMoCode-Atlas.
 
+> **Important:** Use `git clone`. Do not use GitHub's **Download ZIP** button. This project contains symlink files, and ZIP extraction, especially on Windows, can break them and prevent startup.
+
 ```bash
+# 1. Clone the source code
 git clone https://github.com/wede-wx/MiMo-Code.git
+
+# 2. Enter the project directory
 cd MiMo-Code
+
+# 3. Install dependencies. The first run downloads packages and may take a few minutes.
 bun install
+
+# 4. Start in development mode from source
 bun run dev
 ```
+
+After startup, MiMoCode-Atlas opens an interactive terminal UI. The first launch guides you through API configuration. To use `/atlas` auditing, choose Xiaomi's paid tier; the free tier does not support it.
+
+MiMoCode-Atlas runs from source here, which means it needs Bun and must be started from the project directory. It is not the upstream one-click global npm install.
 
 You can also run the CLI source entry directly:
 
