@@ -169,7 +169,7 @@ export const layer = Layer.effect(
       }
       commands[Default.ATLAS] = {
         name: Default.ATLAS,
-        description: "audit the current session trajectory with a clean read-only subagent",
+        description: "独立审计员核验当前会话的完成情况（只读看证据判定，不达标自动逼返工）",
         agent: "atlas",
         source: "command",
         subtask: true,
@@ -180,7 +180,7 @@ export const layer = Layer.effect(
       }
       commands[Default.ATLAS_APPEAL] = {
         name: Default.ATLAS_APPEAL,
-        description: "audit a main-agent appeal against trajectory and the appealed injected-context snapshot",
+        description: "上诉审计——核 main 喊冤申辩的依据真伪（通常由流程自动触发）",
         agent: "atlas-appeal",
         source: "command",
         subtask: true,
