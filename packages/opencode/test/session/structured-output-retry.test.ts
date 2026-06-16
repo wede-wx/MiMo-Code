@@ -110,8 +110,10 @@ describe("structured-output retry — integration", () => {
                 parts: [{ type: "text", text: "What is 2 + 2?" }],
                 format: { type: "json_schema", schema, retryCount },
               })
-              // retryCount repair nudges + 1 initial attempt that trips the terminal error.
-              expect(stub.captures.length).toBe(retryCount + 1)
+              // retryCount repair nudges + 1 initial attempt that trips the terminal error,
+              // + 1 more: Text Loop Detection (official 0.1.1) sees the repeated identical
+              // plain-text output and injects one recovery message before the terminal error.
+              expect(stub.captures.length).toBe(retryCount + 2)
               expect(result.info.role).toBe("assistant")
               if (result.info.role === "assistant") {
                 expect(result.info.error?.name).toBe("StructuredOutputError")

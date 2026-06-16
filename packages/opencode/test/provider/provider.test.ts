@@ -2636,13 +2636,10 @@ test("opencode and opencode-go providers are disabled by MimoFreeAuthPlugin", as
     fn: async () => list(),
   })
 
-  // MimoFreeAuthPlugin always pushes opencode/opencode-go into disabled_providers,
-  // so they should not appear even when the user supplies an apiKey or auth record.
+  // The free-tier mimo-free plugin (which exported MimoFreeAuthPlugin) was removed — we run
+  // on the paid xiaomi tier now, and official 0.1.1 dropped it too. The opencode/opencode-go
+  // disable still applies, but the free "mimo" provider the plugin used to register is gone,
+  // so we no longer assert its presence.
   expect(opencodeProviderPresent(providers)).toBe(false)
   expect(providers[ProviderID.make("opencode-go")]).toBeUndefined()
-  // The replacement free provider should be present.
-  expect(providers[ProviderID.make("mimo")]).toBeDefined()
-  expect(providers[ProviderID.make("mimo")].models[ModelID.make("mimo-auto")]).toBeDefined()
-  expect(providers[ProviderID.make("mimo")].models[ModelID.make("mimo-auto")].limit.context).toBe(1_000_000)
-  expect(providers[ProviderID.make("mimo")].models[ModelID.make("mimo-auto")].limit.output).toBe(128_000)
 })
