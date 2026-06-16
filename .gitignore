@@ -3,6 +3,15 @@ node_modules
 .worktrees
 .sst
 .env
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+auth.json
+**/auth.json
+*.local.json
+*.local.jsonc
 .idea
 .vscode
 .codex
