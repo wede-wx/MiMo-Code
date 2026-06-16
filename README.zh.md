@@ -1,112 +1,114 @@
-<h1 align="center">MiMoCode</h1>
+<h1 align="center">MiMoCode-Atlas</h1>
 
 <p align="center">
-  <img src="assets/readme/mimocode-banner.png" alt="MiMoCode" width="700">
+  <img src="assets/readme/mimocode-banner.png" alt="MiMoCode-Atlas" width="700">
 </p>
 
-<p align="center"><strong>开源 AI 编程智能体，拥有跨会话记忆。</strong></p>
+<p align="center"><strong>MiMoCode 的诚实核验增强分支。</strong></p>
 
 <p align="center">
   中文 | <a href="README.md">English</a>
 </p>
 
 <p align="center">
-  <a href="https://mimo.xiaomi.com/zh/mimocode">官网</a> | <a href="https://mimo.xiaomi.com/zh/blog/mimo-code-long-horizon">博客</a>
+  上游官方 MiMoCode（Xiaomi）：<a href="https://mimo.xiaomi.com/zh/mimocode">官网</a> | <a href="https://mimo.xiaomi.com/zh/blog/mimo-code-long-horizon">博客</a>
 </p>
 
 ---
 
-MiMoCode 是一个终端原生的 AI 编程助手。它能读写代码、执行命令、管理 Git，通过持久化记忆系统，在多次会话间保持对你项目的深度理解，并自我进化。
+MiMoCode-Atlas 是 Xiaomi MiMoCode 的 fork。它保留了 MiMoCode 的终端原生 AI 编程助手底座：读写代码、执行命令、管理 Git、跨会话记忆，以及面向长任务的上下文重建能力。
 
-内置 MiMo Auto 限时免费通道——零配置即可开始使用。也支持接入各家主流 LLM 厂商 API。
+本 fork 的核心区别是 Atlas：一套基于证据的诚实核验闭环。当 agent 声称“做完了”时，Atlas 不相信它的一面之词，而是读取轨迹、工具输出、diff 和账本证据来核验。
+
+---
+
+## 核心：Atlas 诚实核验闭环
+
+Atlas 面向长时间编程会话里的一个现实问题：`我改了东西` 不等于 `目标真的达成了`。
+
+- **独立审计员（`/atlas`）** - 以干净、只读的 subagent 身份空降，只看轨迹、工具输入输出、diff 和账本证据，将声明判为 `DONE`、`NOT DONE`、`UNSUPPORTED` 或超出可核范围。
+- **审计账本** - 将审计报告落盘到 `.mimocode/audit-ledger.md`，保留查了什么、证据是什么、判决是什么。
+- **自动返工闭环** - 审计判为 `NOT_DONE` 时，main agent 会收到返工要求；返工后可自动复审，并有次数上限，避免无限循环。
+- **上诉机制** - main agent 可以用固定的 `APPEAL:` 行申辩。独立上诉审计员会核查它引用的证据是否真实且能支持声明。
+- **高保真上下文快照** - main 每轮可用的 CLAUDE/AGENTS/MEMORY 注入上下文会按版本存档，方便之后核验“当时它到底知道什么”。
+- **结构化副作用留痕** - `write`、`edit`、`bash` 会把 diff 或实际改动文件写入工具 metadata，审计员不必只靠自然语言猜测发生了什么。
+
+目标很简单：让“完成了”的声明可以被审计。
 
 ---
 
 ## 快速开始
 
-```bash
-# 一键安装
-curl -fsSL https://mimo.xiaomi.com/install | bash
+请从源码安装本 fork。如果你要使用 MiMoCode-Atlas，不要使用上游的一键安装脚本或上游 npm 全局包；那两种方式安装的是 Xiaomi 官方包，不是这个 fork。
 
-# 或通过 npm 安装
-npm install -g @mimo-ai/cli
+```bash
+git clone https://github.com/wede-wx/MiMo-Code.git
+cd MiMo-Code
+bun install
+bun run dev
 ```
 
-首次启动自动引导配置。支持：
-- **MiMo Auto（限时免费）** — 匿名通道，零配置
-- **小米 MiMo 平台** — OAuth 登录
-- **从 Claude Code 导入** — 一键迁移已有认证
-- **自定义 Provider** — TUI 内添加任意 OpenAI 兼容 API
+也可以直接运行 CLI 源码入口：
+
+```bash
+bun run --cwd packages/opencode --conditions=browser src/index.ts
+```
+
+### 可选：Windows 的 `mimo` 命令
+
+为了本机使用方便，可以在 Windows 的某个 `PATH` 目录里创建 `mimo.cmd` 或 `mimo.ps1`，让它指向你本机 clone 下来的源码目录。
+
+`mimo.cmd` 示例：
+
+```bat
+@ECHO off
+SETLOCAL
+SET "MIMOCODE_REPO=C:\path\to\MiMo-Code\packages\opencode"
+bun run --cwd "%MIMOCODE_REPO%" --conditions=browser src/index.ts %*
+EXIT /b %ERRORLEVEL%
+```
+
+`mimo.ps1` 示例：
+
+```powershell
+$mimocodeRepo = "C:\path\to\MiMo-Code\packages\opencode"
+& bun run --cwd $mimocodeRepo --conditions=browser src/index.ts @args
+exit $LASTEXITCODE
+```
+
+请把 `C:\path\to\MiMo-Code` 换成你自己的本机路径。
 
 ---
 
-## 核心特性
+## 继承的上游能力
 
-### 多智能体
+MiMoCode-Atlas 继承了 Xiaomi 上游 MiMoCode 的核心能力：
 
-| 智能体 | 说明 |
-|--------|------|
-| **build** | 默认。完整工具权限，用于开发 |
-| **plan** | 只读分析模式，适合代码探索和方案设计 |
-| **compose** | 编排模式，适合 specs-driven 开发和 Skill 驱动流程 |
+- 终端原生 agent 工作流：代码编辑、命令执行、Git 操作和 TUI 交互
+- 多 Provider 支持，包括自定义 OpenAI 兼容 Provider
+- 持久化项目记忆和 SQLite FTS 搜索
+- 长上下文检查点和上下文重建
+- 子智能体编排和后台任务
+- Compose 工作流、内置 skills、`/dream` 和 `/distill`
+- 上游 0.1.1 的 Claude/OpenCode/Codex 导入路径
+- 小米 MiMo 托管服务提供的语音输入能力（MiMo 登录用户可用）
 
-按 `Tab` 在主智能体间切换。子智能体由系统按需生成。
-
-### 持久化记忆
-
-基于 SQLite FTS5 全文搜索的跨会话记忆：
-
-- **项目记忆** (`MEMORY.md`) — 跨会话持久的项目知识、规则、架构决策
-- **会话检查点** (`checkpoint.md`) — 结构化状态快照，由 checkpoint-writer 子智能体自动维护
-- **笔记暂存** (`notes.md`) — Agent 临时记录区
-- **任务进展** (`tasks/<id>/progress.md`) — 逐任务日志
-
-记忆自动在会话恢复时注入上下文，agent 无需重新理解项目背景。
-
-### 智能上下文管理
-
-- **自动检查点** — 根据模型上下文窗口自动决定什么时候保存会话状态
-- **上下文重建** — 当上下文接近上限时，从最新 checkpoint、项目记忆、任务进展和保留的近期消息重建上下文，让 agent 继续当前任务
-- **预算化注入** — 用 token budget 控制 checkpoint / memory / notes 注入上下文的大小，按重要性排序
-
-### 任务追踪
-
-树状任务系统（T1, T1.1, T1.2…），自动与检查点系统联动，恢复会话时任务进度不丢失。
-
-### 子智能体系统
-
-主智能体可按需生成子智能体，共享当前会话上下文并行工作，支持生命周期追踪、取消机制和后台执行。
-
-### Goal / 停止条件
-
-`/goal` 命令为会话设置停止条件。当 agent 想停下来时，由独立裁判模型评估对话内容，判断条件是否真正满足——防止自主工作中的"乐观停止"。
-
-### Compose 编排模式
-
-Compose 模式提供结构化的 specs-driven 开发流程，内置规划、执行、代码审查、TDD、调试、验证、合并等技能——编排从 spec 到交付的完整开发生命周期。
-
-### 语音输入
-
-基于 TenVAD 和 MiMo ASR 的实时流式语音输入。通过 `/voice` 激活，按停顿分片转写，文本逐段追加到输入框。仅对 MiMo 登录用户可用。
-
-### Dream & Distill
-
-- **`/dream`** — 扫描近期会话轨迹，提取持久知识到项目记忆，清理过时条目
-- **`/distill`** — 发现近期工作中重复的手动工作流，将高置信度候选打包成可复用的 skill、subagent 或 command
+完整的上游产品介绍请看本 README 顶部保留的 Xiaomi 官方 MiMoCode 官网和博客链接。
 
 ---
 
-## 配置
+## 本 fork 的增强
 
-通过项目目录下的 `.mimocode/mimocode.json`（或全局 `~/.config/mimocode/mimocode.json`）配置。主要选项包括：
+Atlas 在继承的 agent 运行时之上补上核验和可审计能力：
 
-- Provider 和模型选择
-- Agent 权限和自定义 Agent
-- 检查点和记忆行为
-- MCP 服务器连接
-- 快捷键和主题
-
-Max Mode（并行 best-of-N 推理 + 裁判选优）可通过配置中的 `experimental.maxMode` 开启。
+- `/atlas` 命令：基于证据审计当前会话
+- `/atlas-appeal` 流程：处理被审对象的申辩上诉
+- 机器可读判决行：让流程能确定性消费审计结果
+- 审计报告持久化到 `.mimocode/audit-ledger.md`
+- 审计失败后的自动返工编排
+- 注入上下文快照索引，供后续证据核验
+- 修改类工具的结构化文件变更 metadata
+- 保证审计 agent 只读、隔离 system 注入，避免被被审对象或用户偏好带偏
 
 ---
 
@@ -114,34 +116,52 @@ Max Mode（并行 best-of-N 推理 + 裁判选优）可通过配置中的 `exper
 
 ```bash
 bun install              # 安装依赖
-bun run dev              # 开发模式运行
+bun run dev              # 以开发模式运行本 fork
 bun turbo typecheck      # 类型检查
+```
+
+测试请在具体 package 目录里运行，例如：
+
+```bash
+cd packages/opencode
+bun test test/session --timeout 30000
 ```
 
 ---
 
-## 与 OpenCode 的关系
+## 上游官方资源（Xiaomi）
 
-MiMoCode 基于 [OpenCode](https://github.com/anomalyco/opencode) fork 构建，保留其全部核心能力（多 Provider、TUI、LSP、MCP、插件），并在此基础上构建了持久化记忆、智能上下文管理、子智能体编排、目标驱动的自主循环、Compose 工作流，以及通过 dream/distill 实现的自我进化。
+下面这些资源属于 Xiaomi 上游 MiMoCode / MiMo 平台，不是本 fork 运营的服务。保留在这里是为了方便用户找到原始项目、托管服务和官方社区。
 
----
-
-## 社区
-
-扫描二维码加入社区群聊：
+- **MiMoCode 官方官网和博客** - 已在 README 顶部链接
+- **MiMo Auto / 小米 MiMo 平台** - 小米托管的模型访问和 OAuth 登录能力，适用小米自己的服务条款
+- **语音输入** - 由 Xiaomi MiMo ASR 支持，MiMo 登录用户可用
+- **社区群聊** - 下方是上游 Xiaomi 官方社区二维码
 
 <p align="center">
-  <img src="assets/readme/community-qrcode-1.jpg" alt="社区群聊二维码 1" width="240">
+  <img src="assets/readme/community-qrcode-1.jpg" alt="上游 Xiaomi 社区群聊二维码 1" width="240">
   &nbsp;&nbsp;
-  <img src="assets/readme/community-qrcode-2.jpg" alt="社区群聊二维码 2" width="240">
+  <img src="assets/readme/community-qrcode-2.jpg" alt="上游 Xiaomi 社区群聊二维码 2" width="240">
 </p>
 
 ---
 
-## 许可证
+## 与 MiMoCode 和 OpenCode 的关系
 
-源代码基于 [MIT 许可证](./LICENSE) 开源。
+MiMoCode-Atlas fork 自 [XiaomiMiMo/MiMo-Code](https://github.com/XiaomiMiMo/MiMo-Code)，而 Xiaomi MiMoCode 本身基于 [OpenCode](https://github.com/anomalyco/opencode) fork 构建。
 
-使用 MiMoCode 还需遵守[使用限制](./USE_RESTRICTIONS.md)。
-使用小米 MiMo 托管服务须遵守 [MiMo 服务条款](https://platform.xiaomimimo.com/docs/terms/user-agreement)。
-使用 MiMo 名称、标志和商标须遵守 MiMo 商标政策。
+上游 MiMoCode 在 OpenCode 底座上增加了持久化记忆、智能上下文管理、子智能体编排、目标驱动的自主循环、Compose 工作流，以及通过 `/dream` 和 `/distill` 实现的自我进化。
+
+本 fork 保留这些底座能力，并在其上加入 Atlas 诚实核验闭环：审计、账本、自动返工、上诉、上下文快照和结构化副作用证据。
+
+---
+
+## 许可证与 Fork 说明
+
+本项目 fork 自 XiaomiMiMo/MiMo-Code，并保留原项目的 MIT 许可证和版权声明，详见 [LICENSE](./LICENSE)。
+
+使用 MiMoCode 及其衍生版本还需遵守上游 [Use Restrictions](./USE_RESTRICTIONS.md)。
+
+如果你使用 Xiaomi MiMo 托管服务，包括 MiMo Auto、小米 MiMo 平台 OAuth、MiMo ASR 或其它小米托管模型服务，还需遵守 [Xiaomi MiMo 服务条款](https://platform.xiaomimimo.com/docs/terms/user-agreement)。
+
+MiMo 名称、标志和商标的使用须遵守 Xiaomi 的 MiMo 商标政策。
