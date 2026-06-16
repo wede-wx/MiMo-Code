@@ -108,6 +108,36 @@ Replace `C:\path\to\MiMo-Code` with your own clone path.
 
 ---
 
+## How to Use Atlas
+
+### When to Use It
+
+Use `/atlas` after you ask the AI to finish a task, especially if the task has multiple steps, requires verification, or is easy to cut corners on. Atlas is a post-work audit. It does not watch everything automatically forever; you call it when you want to verify whether the work was really done.
+
+### How to Use It
+
+After the task is done, type `/atlas` in the conversation. Atlas audits the current session and gives a verdict: done, not done, or not enough evidence.
+
+If the audit says the work is not done, Atlas automatically asks the AI to rework it, then re-audits after the fix. It repeats this until the task passes, up to three attempts. You do not need to do anything else: type `/atlas` once and wait for the result. You control when the audit starts.
+
+You may also see `/atlas-appeal` in the command menu. You normally do not need to run it manually. It is an internal review step that can be triggered behind the scenes when a failed audit needs to check the AI's appeal. It is shown so you know the mechanism exists.
+
+### How It Works
+
+`/atlas` starts an independent, read-only auditor. The auditor does not inherit the prior conversation between you and the AI, and it cannot edit files. It reads the real action record from the task: which commands ran, which files changed, what the exit codes were, and what evidence was recorded.
+
+Then it compares what the AI claimed it did with what actually happened in the evidence. It does not rely on the AI's own summary. That is how it can catch cases where the AI says work was done but the record shows otherwise.
+
+### Why It Works This Way
+
+Atlas follows the same idea as a real audit: the person who did the work should not be the only one proving the work was good. A separate role that only reads evidence is more reliable than a self-report. That is the core idea of Atlas.
+
+### Requirement
+
+`/atlas` needs Xiaomi's paid API tier. The free MiMo Auto channel does not support it because its anti-abuse checks can block pure instruction-style auditor requests.
+
+---
+
 ## Inherited Upstream Capabilities
 
 MiMoCode-Atlas inherits the core MiMoCode foundation from Xiaomi's upstream project:
