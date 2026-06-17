@@ -28,8 +28,12 @@ export const WriteTool = Tool.define(
     return {
       description: DESCRIPTION,
       parameters: z.object({
-        content: z.string().describe("The content to write to the file"),
+        // filePath first (before content) on purpose: the TUI marks the write part
+        // complete when input.filePath appears, and the LLM streams tool-call JSON in
+        // schema order. With content first, a large content stream delayed filePath and
+        // the UI stayed stuck on "Preparing write..." for the whole stream. Mirrors edit.ts.
         filePath: z.string().describe("The absolute path to the file to write (must be absolute, not relative)"),
+        content: z.string().describe("The content to write to the file"),
       }),
       execute: (params: { content: string; filePath: string }, ctx: Tool.Context) =>
         Effect.gen(function* () {

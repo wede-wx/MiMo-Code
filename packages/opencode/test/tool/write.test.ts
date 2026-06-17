@@ -57,6 +57,22 @@ const run = Effect.fn("WriteToolTest.run")(function* (
 })
 
 describe("tool.write", () => {
+  describe("parameter schema (TUI completion ordering)", () => {
+    it.live("filePath precedes content so TUI 'Preparing write...' completes early on large content", () =>
+      Effect.gen(function* () {
+        const info = yield* init()
+        const keys = Object.keys((info.parameters as { shape: Record<string, unknown> }).shape)
+        // TUI marks the write part complete when input.filePath appears (session/index.tsx
+        // InlineTool `complete={props.input.filePath}`). The LLM streams tool-call JSON in
+        // schema order, so filePath must precede content — otherwise a large `content`
+        // delays filePath and the UI stays stuck on "Preparing write..." for the whole
+        // content stream. edit.ts already puts filePath first; this keeps write aligned.
+        expect(keys[0]).toBe("filePath")
+        expect(keys).toContain("content") // write behavior unchanged: both params still present
+      }),
+    )
+  })
+
   describe("new file creation", () => {
     it.live("writes content to new file", () =>
       provideTmpdirInstance((dir) =>
