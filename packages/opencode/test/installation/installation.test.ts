@@ -143,9 +143,26 @@ describe("installation", () => {
       expect(result).toBe("1.7.0")
     })
 
-    test("dies for unsupported channels (brew/choco/scoop/curl/unknown)", async () => {
+    test("reads version from GitHub releases redirect for curl method", async () => {
+      const layer = testLayer(
+        () => jsonResponse({}),
+        (cmd, args) => {
+          if (cmd === "curl" && args.includes("https://github.com/XiaomiMiMo/MiMo-Code/releases/latest")) {
+            return "HTTP/2 302\r\nlocation: https://github.com/XiaomiMiMo/MiMo-Code/releases/tag/v1.2.3\r\n"
+          }
+          return ""
+        },
+      )
+
+      const result = await Effect.runPromise(
+        Installation.Service.use((svc) => svc.latest("curl")).pipe(Effect.provide(layer)),
+      )
+      expect(result).toBe("1.2.3")
+    })
+
+    test("dies for unsupported channels (brew/choco/scoop/unknown)", async () => {
       const layer = testLayer(() => jsonResponse({}))
-      const unsupported: Installation.Method[] = ["brew", "choco", "scoop", "curl", "unknown"]
+      const unsupported: Installation.Method[] = ["brew", "choco", "scoop", "unknown"]
 
       for (const method of unsupported) {
         const result = Effect.runPromise(
